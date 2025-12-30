@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -49,6 +50,7 @@ export default function HtsSearch() {
 
   return (
     <div className="min-h-screen">
+      <Navigation />
       <div className="container py-12">
         <div className="mb-8">
           <div className="w-2 h-12 bg-primary mb-4"></div>

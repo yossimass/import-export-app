@@ -1,3 +1,4 @@
+import Navigation from "@/components/Navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,7 @@ export default function TariffCalculator() {
 
   return (
     <div className="min-h-screen">
+      <Navigation />
       <div className="container py-12">
         <div className="mb-8">
           <div className="w-2 h-12 bg-primary mb-4"></div>

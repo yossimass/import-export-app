@@ -104,7 +104,9 @@ export const appRouter = router({
         shipmentId: z.number().optional(), // Link to workflow
       }))
       .query(async ({ input }) => {
-        const response = await invokeLLM({
+        try {
+          console.log('[HTS Search] Starting search for:', input.query);
+          const response = await invokeLLM({
           messages: [
             {
               role: "system",
@@ -119,10 +121,16 @@ export const appRouter = router({
         });
 
         const content = response.choices[0]?.message?.content;
-        if (!content) return [];
+        console.log('[HTS Search] AI returned:', typeof content, content ? String(content).substring(0, 200) : 'null');
+        if (!content) {
+          console.warn('[HTS Search] No content returned');
+          return [];
+        }
 
         const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        const results = parsed.results || parsed.codes || [];
+        console.log('[HTS Search] Parsed keys:', Object.keys(parsed));
+        const results = parsed.results || parsed.codes || parsed.items || [];
+        console.log('[HTS Search] Found', results.length, 'results');
 
         return results.map((item: any) => ({
           code: item.code || item.htsCode || "",
@@ -133,6 +141,10 @@ export const appRouter = router({
           alternatives: item.alternatives || [],
           confidence: item.confidence || 0.85,
         }));
+        } catch (error) {
+          console.error('[HTS Search] Error:', error);
+          return [];
+        }
       }),
 
     recommend: protectedProcedure
