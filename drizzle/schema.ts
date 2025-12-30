@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, boolean, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -19,188 +19,123 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 /**
- * HTS codes database for product classification
+ * Shipments - The central workflow entity
+ * Stores user's shipment workflow state and decisions
+ * All trade data (HTS, tariffs, regulations) is fetched from AI in real-time
  */
-export const htsCodes = mysqlTable("hts_codes", {
+export const shipments = mysqlTable("shipments", {
   id: int("id").autoincrement().primaryKey(),
-  code: varchar("code", { length: 20 }).notNull().unique(),
-  description: text("description").notNull(),
-  unit: varchar("unit", { length: 50 }),
-  category: varchar("category", { length: 100 }),
-  notes: text("notes"),
+  userId: int("userId").notNull(),
+  
+  // Workflow state
+  status: mysqlEnum("status", ["draft", "calculating", "documenting", "reviewing", "complete"]).default("draft").notNull(),
+  workflowStep: int("workflowStep").default(1).notNull(), // 1=HTS, 2=Tariff, 3=Docs, 4=Compliance
+  
+  // User inputs (saved for continuity)
+  shipmentName: varchar("shipmentName", { length: 255 }).notNull(),
+  productDescription: text("productDescription"),
+  htsCode: varchar("htsCode", { length: 20 }),
+  originCountry: varchar("originCountry", { length: 3 }),
+  destinationCountry: varchar("destinationCountry", { length: 3 }),
+  quantity: decimal("quantity", { precision: 15, scale: 4 }),
+  weight: decimal("weight", { precision: 15, scale: 4 }),
+  weightUnit: varchar("weightUnit", { length: 10 }),
+  value: decimal("value", { precision: 15, scale: 2 }),
+  currency: varchar("currency", { length: 3 }).default("USD"),
+  incoterm: varchar("incoterm", { length: 10 }),
+  freightCost: decimal("freightCost", { precision: 15, scale: 2 }),
+  insuranceCost: decimal("insuranceCost", { precision: 15, scale: 2 }),
+  
+  // Cached AI results (for display continuity, not source of truth)
+  lastCalculation: json("lastCalculation").$type<{
+    appliedRate: number;
+    dutyAmount: number;
+    landedCost: number;
+    tradeAgreement?: string;
+    rationale?: string;
+    calculatedAt: string;
+  }>(),
+  
+  // User decisions and overrides
+  userOverrides: json("userOverrides").$type<Array<{
+    field: string;
+    originalValue: any;
+    newValue: any;
+    rationale: string;
+    timestamp: string;
+  }>>(),
+  
+  // Risk assessment (AI-generated, cached)
+  riskScore: int("riskScore"),
+  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]),
+  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
-  codeIdx: index("code_idx").on(table.code),
-  categoryIdx: index("category_idx").on(table.category),
-}));
-
-export type HtsCode = typeof htsCodes.$inferSelect;
-export type InsertHtsCode = typeof htsCodes.$inferInsert;
-
-/**
- * Tariff rates between countries
- */
-export const tariffRates = mysqlTable("tariff_rates", {
-  id: int("id").autoincrement().primaryKey(),
-  htsCodeId: int("hts_code_id").notNull(),
-  originCountry: varchar("origin_country", { length: 3 }).notNull(), // ISO 3166-1 alpha-3
-  destinationCountry: varchar("destination_country", { length: 3 }).notNull(),
-  rate: decimal("rate", { precision: 10, scale: 4 }).notNull(), // percentage
-  additionalDuties: text("additional_duties"), // JSON string for complex duty structures
-  effectiveDate: timestamp("effective_date").notNull(),
-  expiryDate: timestamp("expiry_date"),
-  tradeAgreement: varchar("trade_agreement", { length: 100 }),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
-  htsCodeIdx: index("hts_code_idx").on(table.htsCodeId),
-  countriesIdx: index("countries_idx").on(table.originCountry, table.destinationCountry),
-}));
-
-export type TariffRate = typeof tariffRates.$inferSelect;
-export type InsertTariffRate = typeof tariffRates.$inferInsert;
-
-/**
- * Country-specific trade regulations
- */
-export const tradeRegulations = mysqlTable("trade_regulations", {
-  id: int("id").autoincrement().primaryKey(),
-  countryCode: varchar("country_code", { length: 3 }).notNull(),
-  regulationType: varchar("regulation_type", { length: 100 }).notNull(), // e.g., "import_restriction", "export_control"
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description").notNull(),
-  applicableProducts: text("applicable_products"), // JSON array of HTS codes or categories
-  requirements: text("requirements").notNull(),
-  documentationNeeded: text("documentation_needed"),
-  effectiveDate: timestamp("effective_date").notNull(),
-  lastUpdated: timestamp("last_updated").defaultNow().onUpdateNow().notNull(),
-  sourceUrl: text("source_url"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
-  countryIdx: index("country_idx").on(table.countryCode),
-  typeIdx: index("type_idx").on(table.regulationType),
-}));
-
-export type TradeRegulation = typeof tradeRegulations.$inferSelect;
-export type InsertTradeRegulation = typeof tradeRegulations.$inferInsert;
-
-/**
- * Trade documents stored in S3
- */
-export const tradeDocuments = mysqlTable("trade_documents", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("user_id").notNull(),
-  documentType: mysqlEnum("document_type", [
-    "certificate_of_origin",
-    "commercial_invoice",
-    "packing_list",
-    "customs_declaration",
-    "bill_of_lading",
-    "export_license",
-    "import_license",
-    "other"
-  ]).notNull(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  fileKey: varchar("file_key", { length: 500 }).notNull(),
-  fileUrl: text("file_url").notNull(),
-  fileName: varchar("file_name", { length: 255 }).notNull(),
-  mimeType: varchar("mime_type", { length: 100 }),
-  fileSize: int("file_size"), // bytes
-  shipmentReference: varchar("shipment_reference", { length: 100 }),
-  expiryDate: timestamp("expiry_date"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
-  userIdx: index("user_idx").on(table.userId),
-  typeIdx: index("type_idx").on(table.documentType),
-}));
-
-export type TradeDocument = typeof tradeDocuments.$inferSelect;
-export type InsertTradeDocument = typeof tradeDocuments.$inferInsert;
-
-/**
- * User alert preferences and history
- */
-export const alertPreferences = mysqlTable("alert_preferences", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("user_id").notNull().unique(),
-  tariffChanges: boolean("tariff_changes").default(true).notNull(),
-  regulationUpdates: boolean("regulation_updates").default(true).notNull(),
-  licenseRenewals: boolean("license_renewals").default(true).notNull(),
-  shipmentUpdates: boolean("shipment_updates").default(true).notNull(),
-  emailNotifications: boolean("email_notifications").default(true).notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  completedAt: timestamp("completedAt"),
 });
 
-export type AlertPreference = typeof alertPreferences.$inferSelect;
-export type InsertAlertPreference = typeof alertPreferences.$inferInsert;
+export type Shipment = typeof shipments.$inferSelect;
+export type InsertShipment = typeof shipments.$inferInsert;
 
 /**
- * Alert history
+ * Documents - User-uploaded files linked to shipments
+ */
+export const documents = mysqlTable("documents", {
+  id: int("id").autoincrement().primaryKey(),
+  shipmentId: int("shipmentId"),
+  userId: int("userId").notNull(),
+  
+  documentType: varchar("documentType", { length: 100 }).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  fileKey: varchar("fileKey", { length: 500 }).notNull(),
+  fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
+  mimeType: varchar("mimeType", { length: 100 }),
+  fileSize: int("fileSize"),
+  
+  status: mysqlEnum("status", ["uploaded", "verified", "rejected"]).default("uploaded"),
+  
+  uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
+});
+
+export type Document = typeof documents.$inferSelect;
+export type InsertDocument = typeof documents.$inferInsert;
+
+/**
+ * Alerts - User notification subscriptions
  */
 export const alerts = mysqlTable("alerts", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("user_id").notNull(),
-  alertType: mysqlEnum("alert_type", [
-    "tariff_change",
-    "regulation_update",
-    "license_renewal",
-    "shipment_update"
-  ]).notNull(),
+  userId: int("userId").notNull(),
+  
+  alertType: mysqlEnum("alertType", ["tariff_change", "regulation_update", "license_renewal", "shipment_status"]).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message").notNull(),
-  relatedEntityId: int("related_entity_id"), // ID of related tariff, regulation, etc.
-  isRead: boolean("is_read").default(false).notNull(),
-  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  
+  htsCode: varchar("htsCode", { length: 20 }),
+  countryCode: varchar("countryCode", { length: 3 }),
+  shipmentId: int("shipmentId"),
+  
+  read: boolean("read").default(false),
+  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
-  userIdx: index("user_idx").on(table.userId),
-  typeIdx: index("type_idx").on(table.alertType),
-}));
+});
 
 export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = typeof alerts.$inferInsert;
 
 /**
- * Saved compliance checklists
+ * Chat Messages - AI assistant conversation history
  */
-export const complianceChecklists = mysqlTable("compliance_checklists", {
+export const chatMessages = mysqlTable("chatMessages", {
   id: int("id").autoincrement().primaryKey(),
-  userId: int("user_id").notNull(),
-  title: varchar("title", { length: 255 }).notNull(),
-  originCountry: varchar("origin_country", { length: 3 }).notNull(),
-  destinationCountry: varchar("destination_country", { length: 3 }).notNull(),
-  htsCode: varchar("hts_code", { length: 20 }),
-  productDescription: text("product_description"),
-  checklistItems: text("checklist_items").notNull(), // JSON array of checklist items
-  completedItems: text("completed_items"), // JSON array of completed item IDs
-  status: mysqlEnum("status", ["draft", "in_progress", "completed"]).default("draft").notNull(),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-}, (table) => ({
-  userIdx: index("user_idx").on(table.userId),
-}));
-
-export type ComplianceChecklist = typeof complianceChecklists.$inferSelect;
-export type InsertComplianceChecklist = typeof complianceChecklists.$inferInsert;
-
-/**
- * Chat history for AI assistant
- */
-export const chatMessages = mysqlTable("chat_messages", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("user_id").notNull(),
-  sessionId: varchar("session_id", { length: 100 }).notNull(),
+  userId: int("userId").notNull(),
+  conversationId: varchar("conversationId", { length: 100 }).notNull(),
+  
   role: mysqlEnum("role", ["user", "assistant"]).notNull(),
   content: text("content").notNull(),
-  metadata: text("metadata"), // JSON for additional context
+  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-}, (table) => ({
-  userSessionIdx: index("user_session_idx").on(table.userId, table.sessionId),
-}));
+});
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;

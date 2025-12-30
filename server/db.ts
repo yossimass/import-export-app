@@ -1,11 +1,10 @@
-import { eq, and, desc } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, tradeDocuments, complianceChecklists, alerts, chatMessages } from "../drizzle/schema";
+import { InsertUser, users, shipments, documents, alerts, chatMessages, InsertShipment, Shipment, InsertDocument, Document } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -17,6 +16,10 @@ export async function getDb() {
   }
   return _db;
 }
+
+// ============================================================================
+// USER MANAGEMENT
+// ============================================================================
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
@@ -85,203 +88,158 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
   return result.length > 0 ? result[0] : undefined;
 }
 
-// Documents
-export async function getUserDocuments(userId: number) {
+// ============================================================================
+// SHIPMENT WORKFLOW
+// ============================================================================
+
+export async function createShipment(data: InsertShipment): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(shipments).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getShipmentById(id: number): Promise<Shipment | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(shipments).where(eq(shipments.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getUserShipments(userId: number): Promise<Shipment[]> {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(tradeDocuments).where(eq(tradeDocuments.userId, userId)).orderBy(desc(tradeDocuments.createdAt));
+
+  return await db.select().from(shipments)
+    .where(eq(shipments.userId, userId))
+    .orderBy(desc(shipments.updatedAt));
 }
 
-export async function createDocument(data: {
-  userId: number;
-  filename: string;
-  fileUrl: string;
-  fileKey: string;
-  documentType: string;
-  description?: string;
-}) {
+export async function getRecentShipments(userId: number, limit: number = 5): Promise<Shipment[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(shipments)
+    .where(eq(shipments.userId, userId))
+    .orderBy(desc(shipments.updatedAt))
+    .limit(limit);
+}
+
+export async function updateShipment(id: number, data: Partial<Shipment>): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  const result = await db.insert(tradeDocuments).values({
-    userId: data.userId,
-    documentType: data.documentType as any,
-    title: data.filename,
-    description: data.description || null,
-    fileKey: data.fileKey,
-    fileUrl: data.fileUrl,
-    fileName: data.filename,
-  });
-  return { id: Number((result as any).insertId), ...data };
+
+  await db.update(shipments).set(data).where(eq(shipments.id, id));
 }
 
-export async function deleteDocument(documentId: number, userId: number) {
+export async function deleteShipment(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  await db.delete(tradeDocuments).where(and(eq(tradeDocuments.id, documentId), eq(tradeDocuments.userId, userId)));
-  return { success: true };
+
+  await db.delete(shipments).where(eq(shipments.id, id));
 }
 
-// Checklists
-export async function createChecklist(data: {
-  userId: number;
+// ============================================================================
+// DOCUMENTS
+// ============================================================================
+
+export async function createDocument(data: InsertDocument): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const result = await db.insert(documents).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getShipmentDocuments(shipmentId: number): Promise<Document[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(documents)
+    .where(eq(documents.shipmentId, shipmentId))
+    .orderBy(desc(documents.uploadedAt));
+}
+
+export async function getUserDocuments(userId: number): Promise<Document[]> {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select().from(documents)
+    .where(eq(documents.userId, userId))
+    .orderBy(desc(documents.uploadedAt));
+}
+
+export async function deleteDocument(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.delete(documents).where(eq(documents.id, id));
+}
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+export async function createAlert(userId: number, data: {
+  alertType: "tariff_change" | "regulation_update" | "license_renewal" | "shipment_status";
   title: string;
-  shipmentType: string;
-  originCountry: string;
-  destinationCountry: string;
-  items: any;
-}) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const result = await db.insert(complianceChecklists).values({
-    userId: data.userId,
-    title: data.title,
-    originCountry: data.originCountry,
-    destinationCountry: data.destinationCountry,
-    checklistItems: JSON.stringify(data.items),
-  });
-  return Number((result as any).insertId);
-}
-
-export async function getUserChecklists(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  
-  const results = await db.select().from(complianceChecklists).where(eq(complianceChecklists.userId, userId)).orderBy(desc(complianceChecklists.createdAt));
-  return results.map(r => ({
-    ...r,
-    items: JSON.parse(r.checklistItems as string),
-  }));
-}
-
-export async function getChecklist(checklistId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const results = await db.select().from(complianceChecklists).where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId))).limit(1);
-  if (results.length === 0) return null;
-  
-  return {
-    ...results[0],
-    items: JSON.parse(results[0].checklistItems as string),
-  };
-}
-
-export async function updateChecklistItem(checklistId: number, userId: number, itemIndex: number, completed: boolean) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  const checklist = await getChecklist(checklistId, userId);
-  if (!checklist) throw new Error("Checklist not found");
-  
-  const items = checklist.items;
-  if (itemIndex < 0 || itemIndex >= items.length) throw new Error("Invalid item index");
-  
-  items[itemIndex].completed = completed;
-  
-  await db.update(complianceChecklists)
-    .set({ checklistItems: JSON.stringify(items) })
-    .where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId)));
-  
-  return { success: true };
-}
-
-export async function deleteChecklist(checklistId: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
-  await db.delete(complianceChecklists).where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId)));
-  return { success: true };
-}
-
-// Alerts
-export async function createAlert(data: {
-  userId: number;
-  alertType: string;
+  message: string;
   htsCode?: string;
   countryCode?: string;
-  email: string;
-}) {
+  shipmentId?: number;
+}): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
+
   const result = await db.insert(alerts).values({
-    userId: data.userId,
-    alertType: data.alertType as any,
-    title: `Alert for ${data.alertType}`,
-    message: `Monitoring ${data.alertType} for ${data.htsCode || data.countryCode || 'all'}`,
+    userId,
+    ...data,
   });
-  return { id: Number((result as any).insertId), ...data };
+  return Number(result[0].insertId);
 }
 
-export async function getUserAlerts(userId: number) {
+export async function getUserAlerts(userId: number): Promise<typeof alerts.$inferSelect[]> {
   const db = await getDb();
   if (!db) return [];
-  return await db.select().from(alerts).where(eq(alerts.userId, userId)).orderBy(desc(alerts.createdAt));
+
+  return await db.select().from(alerts)
+    .where(eq(alerts.userId, userId))
+    .orderBy(desc(alerts.createdAt));
 }
 
-export async function deleteAlert(alertId: number, userId: number) {
+export async function deleteAlert(id: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  await db.delete(alerts).where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)));
-  return { success: true };
+
+  await db.delete(alerts).where(eq(alerts.id, id));
 }
 
-// Chat
-export async function createConversation(userId: number) {
+// ============================================================================
+// CHAT HISTORY
+// ============================================================================
+
+export async function saveChatMessage(userId: number, conversationId: string, role: "user" | "assistant", content: string): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  
-  // Generate unique session ID
-  const sessionId = `session_${userId}_${Date.now()}`;
-  return sessionId;
-}
 
-export async function getUserConversations(userId: number) {
-  const db = await getDb();
-  if (!db) return [];
-  
-  // Get unique sessions for this user
-  const messages = await db.select().from(chatMessages).where(eq(chatMessages.userId, userId)).orderBy(desc(chatMessages.createdAt));
-  const sessions = new Map();
-  
-  messages.forEach(msg => {
-    if (!sessions.has(msg.sessionId)) {
-      sessions.set(msg.sessionId, {
-        id: msg.sessionId,
-        userId: msg.userId,
-        createdAt: msg.createdAt,
-      });
-    }
-  });
-  
-  return Array.from(sessions.values());
-}
-
-export async function saveChatMessage(sessionId: string, role: string, content: string, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-  
   await db.insert(chatMessages).values({
     userId,
-    sessionId,
-    role: role as any,
+    conversationId,
+    role,
     content,
   });
 }
 
-export async function getChatHistory(sessionId: string, userId: number) {
+export async function getChatHistory(userId: number, conversationId: string): Promise<typeof chatMessages.$inferSelect[]> {
   const db = await getDb();
   if (!db) return [];
-  
+
   return await db.select().from(chatMessages)
-    .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.userId, userId)))
+    .where(eq(chatMessages.userId, userId))
     .orderBy(chatMessages.createdAt);
 }

@@ -1,57 +1,103 @@
-# Import Export Trade Assistant - TODO
+# Import Export Trade Assistant - Production Rebuild
 
-## Core Features
-- [x] HTS code search and lookup functionality with detailed product classification
-- [x] Tariff rate calculator for imports/exports between countries
-- [x] Country-specific trade regulations and requirements database
-- [x] Compliance checklist generator for import/export documentation
-- [x] Trade document templates and management system
-- [x] Currency converter with real-time exchange rates
-- [x] Shipping cost estimator based on weight, dimensions, and destination
-- [x] Duty and tax calculator for customs clearance
-- [x] Trade agreement lookup (FTA, preferential rates)
-- [x] Export/import license requirements checker
+## Critical Issues Identified
 
-## Advanced Features
-- [x] Intelligent chatbot that answers trade compliance questions
-- [x] AI-powered HTS code recommendations based on product descriptions
-- [x] Chatbot guidance on documentation requirements
-- [x] Secure cloud storage for trade documents (certificates of origin, commercial invoices, packing lists, customs declarations)
-- [x] Organized folder structure for document management
-- [x] Automated email alerts for tariff changes
-- [x] Automated email alerts for new trade regulations
-- [x] License renewal reminder alerts
-- [x] Shipment status update alerts
+### Workflow Continuity (PRIORITY 1)
+- [x] Create unified Shipment entity that connects HTS → Tariff → Docs → Compliance
+- [x] Implement workflow state machine (Draft → Calculating → Documenting → Reviewing → Complete)
+- [ ] Add "Continue from HTS" button that auto-feeds tariff calculator (frontend)
+- [ ] Add "Generate Checklist" button from tariff results (frontend)
+- [ ] Show workflow progress indicator across all pages (frontend)
 
-## Technical Implementation
-- [x] Database schema for user-generated content (documents, checklists, alerts, chat history)
-- [x] Backend tRPC procedures with AI-powered real-time lookups
-- [x] LLM integration for AI chatbot and data lookups
-- [x] S3 integration for document storage
-- [x] Email notification system
-- [x] Frontend UI with International Typographic Style design
-- [x] Authentication and user management
+### Tariff Calculator Enhancement (PRIORITY 1)
+- [x] Add Incoterms selection (FOB, CIF, DDP, etc.) - backend
+- [x] Add quantity and weight fields - backend
+- [x] Show duty breakdown: MFN rate, preferential rate, additional duties - backend
+- [x] Display applicable trade agreements (USMCA, GSP, FTA) - backend
+- [x] Show exclusion status and expiration dates - backend
+- [x] Add insurance and freight cost fields - backend
+- [x] Calculate landed cost with all fees - backend
+- [ ] Update frontend to display all new fields
 
-## AI-Powered Real-Time System (Evergreen Data)
-- [x] HTS codes looked up on-demand using AI with current 2025 data
-- [x] Tariff rates calculated in real-time with current trade agreements
-- [x] Trade regulations fetched in real-time from current sources
-- [x] Currency exchange rates provided by AI with current market data
-- [x] Shipping estimates calculated by AI with current logistics data
-- [x] All trade data stays current without manual database updates
+### Audit Trail & Memory (PRIORITY 1)
+- [x] Create shipments table with full history
+- [x] Save calculations to shipment.lastCalculation field
+- [x] Backend API for recent shipments
+- [x] User overrides tracked in shipment.userOverrides
+- [ ] Show "Recent Calculations" on calculator empty state (frontend)
+- [ ] Export audit trail to PDF/CSV (future)
+- [ ] Show "Last updated" timestamps on all AI data (frontend)
 
-## Bugs Fixed
-- [x] HTS code search now returns real-time results via AI lookup
-- [x] Tariff calculator works with AI-powered current rates
-- [x] Trade regulations page shows current data via AI
-- [x] Document upload integrated with S3 storage
-- [x] Checklist generator creates actionable AI-generated items
-- [x] All TypeScript errors resolved
-- [x] Frontend pages properly connected to backend APIs
+### Explainability (PRIORITY 2)
+- [x] Show AI reasoning for every HTS code recommendation - backend
+- [x] Display alternative HTS codes with pros/cons - backend
+- [x] Explain tariff rate sources (MFN, FTA, Section 301) - backend
+- [x] Show regulation citation sources - backend
+- [x] Add rationale field to all AI responses - backend
+- [x] Display confidence scores for AI recommendations - backend
+- [ ] Update frontend to show explainability UI
 
-## SEO Improvements
-- [x] Add meta keywords to homepage
-- [x] Extend page title to 30-60 characters (now 72 chars with pipe separator)
-- [x] Add meta description (50-160 characters - now 154 chars)
-- [x] Add Open Graph tags for social sharing
-- [ ] Add structured data for better search visibility
+### Semantic Color Coding (PRIORITY 2)
+- [ ] Red = High risk (restricted items, high duties, missing docs)
+- [ ] Yellow = Conditional (requires license, preferential rate available)
+- [ ] Green = Low risk (compliant, low duties, docs complete)
+- [ ] Apply color coding to HTS results, tariff rates, compliance status
+- [ ] Add risk score (0-100) to every shipment
+
+### Document Management Fixes (PRIORITY 2)
+- [ ] Fix S3 upload functionality
+- [ ] Auto-generate document checklist from HTS + country
+- [ ] Link documents to specific shipments
+- [ ] Add document status tracking (Missing → Uploaded → Verified)
+- [ ] Generate document templates with pre-filled data
+- [ ] Add document expiration tracking
+
+### Empty State Improvements (PRIORITY 3)
+- [ ] Show example scenarios on calculator empty state
+- [ ] Display recent calculations with quick-load
+- [ ] Show regulatory alerts for recently used HTS codes
+- [ ] Add "Popular HTS Codes" on search empty state
+- [ ] Show compliance tips and best practices
+
+### Data Authority Features (PRIORITY 3)
+- [ ] Add data source citations (CBP, USTR, WTO)
+- [ ] Show effective dates for all rates
+- [ ] Display historical rate changes
+- [ ] Add "Report Incorrect Data" button
+- [ ] Show last AI model update timestamp
+- [ ] Add disclaimer text for legal compliance
+
+## Database Schema Changes Needed
+- [x] Create shipments table with workflow state and user inputs
+- [x] Create documents table linked to shipments
+- [x] Create chatMessages table for AI assistant history
+- [x] Create alerts table for user notifications
+- [x] Simplified schema - only user-generated content stored locally
+
+## UI/UX Improvements
+- [ ] Add workflow progress bar component
+- [ ] Create risk badge component (red/yellow/green)
+- [ ] Add "Explain" button component for AI outputs
+- [ ] Create shipment dashboard showing all active shipments
+- [ ] Add quick actions: "New Shipment", "Continue Shipment", "View History"
+- [ ] Implement breadcrumb navigation showing workflow position
+
+## Testing Requirements
+- [ ] Test complete workflow: HTS search → Tariff calc → Doc generation → Compliance check
+- [ ] Test audit trail: verify all actions are logged
+- [ ] Test explainability: verify AI shows reasoning
+- [ ] Test memory: verify saved shipments persist and reload correctly
+- [ ] Test risk scoring: verify color coding matches risk levels
+
+## Previously Completed
+- [x] HTS code search with AI-powered real-time lookup
+- [x] Basic tariff calculator with AI rates
+- [x] Trade regulations with AI lookup
+- [x] Document upload UI (needs S3 fix)
+- [x] Checklist generator (needs workflow integration)
+- [x] AI chatbot for trade questions
+- [x] Currency converter
+- [x] Shipping estimator
+- [x] Alert system
+- [x] International Typographic Style design
+- [x] SEO optimization
