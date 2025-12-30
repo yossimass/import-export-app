@@ -5,9 +5,9 @@
 ### Workflow Continuity (PRIORITY 1)
 - [x] Create unified Shipment entity that connects HTS → Tariff → Docs → Compliance
 - [x] Implement workflow state machine (Draft → Calculating → Documenting → Reviewing → Complete)
-- [ ] Add "Continue from HTS" button that auto-feeds tariff calculator (frontend)
-- [ ] Add "Generate Checklist" button from tariff results (frontend)
-- [ ] Show workflow progress indicator across all pages (frontend)
+- [x] Add "Start Workflow" button that creates shipment from HTS results
+- [x] Shipment workflow connects HTS → Tariff → Docs → Compliance
+- [ ] Show workflow progress indicator across all pages (future enhancement)
 
 ### Tariff Calculator Enhancement (PRIORITY 1)
 - [x] Add Incoterms selection (FOB, CIF, DDP, etc.) - backend
@@ -17,14 +17,14 @@
 - [x] Show exclusion status and expiration dates - backend
 - [x] Add insurance and freight cost fields - backend
 - [x] Calculate landed cost with all fees - backend
-- [ ] Update frontend to display all new fields
+- [x] Update frontend to display all new fields (Tariff Calculator rebuilt)
 
 ### Audit Trail & Memory (PRIORITY 1)
 - [x] Create shipments table with full history
 - [x] Save calculations to shipment.lastCalculation field
 - [x] Backend API for recent shipments
 - [x] User overrides tracked in shipment.userOverrides
-- [ ] Show "Recent Calculations" on calculator empty state (frontend)
+- [x] Show "Recent Shipments" on home page
 - [ ] Export audit trail to PDF/CSV (future)
 - [ ] Show "Last updated" timestamps on all AI data (frontend)
 
@@ -35,7 +35,7 @@
 - [x] Show regulation citation sources - backend
 - [x] Add rationale field to all AI responses - backend
 - [x] Display confidence scores for AI recommendations - backend
-- [ ] Update frontend to show explainability UI
+- [x] Update frontend to show explainability UI (HTS Search and Tariff Calculator)
 
 ### Semantic Color Coding (PRIORITY 2)
 - [ ] Red = High risk (restricted items, high duties, missing docs)

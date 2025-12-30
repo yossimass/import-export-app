@@ -1,180 +1,141 @@
-import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
-import Navigation from "@/components/Navigation";
+import { Card } from "@/components/ui/card";
 import { Link } from "wouter";
-import { 
-  Search, 
-  Calculator, 
-  FileText, 
-  FolderOpen, 
-  CheckSquare, 
-  MessageSquare,
-  ArrowRight
-} from "lucide-react";
+import { Search, Calculator, FileText, CheckSquare, MessageSquare, Wrench } from "lucide-react";
+import { trpc } from "@/lib/trpc";
 
 export default function Home() {
-  const { isAuthenticated } = useAuth();
-
-  const features = [
-    {
-      icon: Search,
-      title: "HTS Code Search",
-      description: "Search and lookup Harmonized Tariff Schedule codes with detailed product classification.",
-      path: "/hts-search",
-    },
-    {
-      icon: Calculator,
-      title: "Tariff Calculator",
-      description: "Calculate tariff rates, duties, and taxes for imports and exports between countries.",
-      path: "/tariff-calculator",
-    },
-    {
-      icon: FileText,
-      title: "Trade Regulations",
-      description: "Access country-specific trade regulations, requirements, and compliance information.",
-      path: "/regulations",
-    },
-    {
-      icon: FolderOpen,
-      title: "Document Management",
-      description: "Secure cloud storage for trade documents, certificates, invoices, and declarations.",
-      path: "/documents",
-    },
-    {
-      icon: CheckSquare,
-      title: "Compliance Checklists",
-      description: "Generate and manage comprehensive compliance checklists for your shipments.",
-      path: "/checklists",
-    },
-    {
-      icon: MessageSquare,
-      title: "AI Assistant",
-      description: "Get instant answers to trade compliance questions with our intelligent chatbot.",
-      path: "/chat",
-    },
-  ];
+  const { data: recentShipments } = trpc.shipments.recent.useQuery({ limit: 3 });
 
   return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
-
-      {/* Hero Section - Asymmetric Layout */}
-      <section className="border-b border-black">
-        <div className="container py-24">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
-            <div className="lg:col-span-7">
-              <div className="relative">
-                <div className="absolute -left-8 top-0 w-4 h-4 bg-primary"></div>
-                <h1 className="text-6xl font-bold mb-6 leading-tight">
-                  International Trade Compliance Platform
-                </h1>
-              </div>
-              <p className="text-xl mb-8 leading-relaxed max-w-2xl">
-                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, 
-                manage documents, and ensure compliance with our comprehensive trade platform.
+    <div className="min-h-screen flex flex-col">
+      <main className="flex-1">
+        {/* Hero Section */}
+        <section className="container py-20">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <div className="w-2 h-16 bg-primary mb-6"></div>
+              <h1 className="text-5xl font-bold mb-6 leading-tight">
+                International Trade Compliance Platform
+              </h1>
+              <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance with our comprehensive trade platform.
               </p>
-              {!isAuthenticated ? (
-                <Button asChild size="lg" className="gap-2">
-                  <a href={getLoginUrl()}>
-                    Get Started
-                    <ArrowRight className="w-5 h-5" />
-                  </a>
+              <Link href="/hts-search">
+                <Button size="lg" className="text-lg px-8">
+                  Start Searching →
                 </Button>
-              ) : (
-                <Button asChild size="lg" className="gap-2">
-                  <Link href="/hts-search">
-                    Start Searching
-                    <ArrowRight className="w-5 h-5" />
-                  </Link>
-                </Button>
-              )}
+              </Link>
             </div>
-            <div className="lg:col-span-5 flex items-center justify-center">
-              <div className="relative">
-                <div className="w-64 h-64 border-4 border-black"></div>
-                <div className="absolute -bottom-8 -right-8 w-32 h-32 bg-primary"></div>
-              </div>
+            
+            <div className="relative">
+              <div className="absolute top-0 right-0 w-64 h-64 border-4 border-border"></div>
+              <div className="absolute bottom-0 left-12 w-64 h-64 bg-primary"></div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Grid */}
-      <section className="py-24">
-        <div className="container">
-          <div className="mb-16">
-            <div className="relative inline-block">
-              <div className="absolute -left-8 top-2 w-4 h-4 bg-primary"></div>
-              <h2 className="text-4xl font-bold">Platform Features</h2>
-            </div>
-            <div className="w-24 h-1 bg-black mt-4"></div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {features.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <div
-                  key={index}
-                  className="border border-black p-8 hover:bg-secondary transition-colors group"
-                >
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="w-12 h-12 bg-primary flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-6 h-6 text-white" />
-                    </div>
-                    <h3 className="text-xl font-bold mt-2">{feature.title}</h3>
-                  </div>
-                  <p className="text-muted-foreground mb-6 leading-relaxed">
-                    {feature.description}
-                  </p>
-                  {isAuthenticated && (
-                    <Link href={feature.path}>
-                      <Button variant="outline" className="gap-2 group-hover:bg-white">
-                        Learn More
-                        <ArrowRight className="w-4 h-4" />
-                      </Button>
-                    </Link>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      {!isAuthenticated && (
-        <section className="border-t border-black py-24 bg-secondary">
-          <div className="container text-center">
-            <h2 className="text-4xl font-bold mb-6">Ready to Get Started?</h2>
-            <p className="text-xl mb-8 max-w-2xl mx-auto">
-              Join thousands of businesses streamlining their international trade compliance.
-            </p>
-            <Button asChild size="lg" className="gap-2">
-              <a href={getLoginUrl()}>
-                Create Free Account
-                <ArrowRight className="w-5 h-5" />
-              </a>
-            </Button>
           </div>
         </section>
-      )}
 
-      {/* Footer */}
-      <footer className="border-t border-black py-8">
-        <div className="container">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 bg-primary"></div>
-              <span className="font-bold">TRADE COMPLIANCE</span>
+        {/* Recent Shipments */}
+        {recentShipments && recentShipments.length > 0 && (
+          <section className="container py-12 border-t-2 border-border">
+            <h2 className="text-2xl font-bold mb-6">Recent Shipments</h2>
+            <div className="grid md:grid-cols-3 gap-6">
+              {recentShipments.map((shipment) => (
+                <Card key={shipment.id} className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <h3 className="font-bold">{shipment.shipmentName}</h3>
+                    <span className={`px-2 py-1 text-xs font-mono ${
+                      shipment.status === 'complete' ? 'bg-green-100 text-green-800' :
+                      shipment.status === 'reviewing' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {shipment.status}
+                    </span>
+                  </div>
+                  {shipment.htsCode && (
+                    <p className="text-sm text-muted-foreground mb-2">HTS: {shipment.htsCode}</p>
+                  )}
+                  {shipment.originCountry && shipment.destinationCountry && (
+                    <p className="text-sm text-muted-foreground mb-4">
+                      {shipment.originCountry} → {shipment.destinationCountry}
+                    </p>
+                  )}
+                  <Link href={`/tariff-calculator?shipmentId=${shipment.id}`}>
+                    <Button variant="outline" size="sm" className="w-full">
+                      Continue Workflow →
+                    </Button>
+                  </Link>
+                </Card>
+              ))}
             </div>
-            <p className="text-sm text-muted-foreground">
-              © 2025 International Trade Compliance Platform
-            </p>
+          </section>
+        )}
+
+        {/* Features Grid */}
+        <section className="container py-16">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <Link href="/hts-search">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <Search className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">HTS Code Search</h3>
+                <p className="text-muted-foreground">
+                  AI-powered search with detailed product classification and risk assessment
+                </p>
+              </Card>
+            </Link>
+
+            <Link href="/tariff-calculator">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <Calculator className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">Tariff Calculator</h3>
+                <p className="text-muted-foreground">
+                  Calculate duties with MFN rates, trade agreements, and landed cost breakdown
+                </p>
+              </Card>
+            </Link>
+
+            <Link href="/regulations">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <FileText className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">Trade Regulations</h3>
+                <p className="text-muted-foreground">
+                  Current import/export requirements and compliance standards by country
+                </p>
+              </Card>
+            </Link>
+
+            <Link href="/documents">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <FileText className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">Document Management</h3>
+                <p className="text-muted-foreground">
+                  Secure cloud storage for trade documents with shipment linking
+                </p>
+              </Card>
+            </Link>
+
+            <Link href="/checklists">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <CheckSquare className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">Compliance Checklists</h3>
+                <p className="text-muted-foreground">
+                  AI-generated requirements for your specific shipment and route
+                </p>
+              </Card>
+            </Link>
+
+            <Link href="/chat-assistant">
+              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+                <MessageSquare className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">AI Assistant</h3>
+                <p className="text-muted-foreground">
+                  Get expert answers on trade compliance, regulations, and documentation
+                </p>
+              </Card>
+            </Link>
           </div>
-        </div>
-      </footer>
+        </section>
+      </main>
     </div>
   );
 }

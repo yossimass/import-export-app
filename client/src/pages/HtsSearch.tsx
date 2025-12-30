@@ -1,209 +1,136 @@
 import { useState } from "react";
-import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { Search, Sparkles, Loader2 } from "lucide-react";
-import { Textarea } from "@/components/ui/textarea";
+import { Search, Info } from "lucide-react";
 import { toast } from "sonner";
+import { useLocation } from "wouter";
 
 export default function HtsSearch() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [productDescription, setProductDescription] = useState("");
-  
-  const searchMutation = trpc.hts.search.useQuery(
-    { query: searchQuery },
-    { enabled: searchQuery.length > 0 }
+  const [query, setQuery] = useState("");
+  const [, setLocation] = useLocation();
+  const { data: results, isLoading, refetch } = trpc.hts.search.useQuery(
+    { query, limit: 10 },
+    { enabled: false }
   );
 
-  const recommendMutation = trpc.hts.recommendCode.useMutation({
-    onSuccess: () => {
-      toast.success("AI recommendations generated successfully");
-    },
-    onError: (error) => {
-      toast.error("Failed to generate recommendations: " + error.message);
+  const createShipmentMutation = trpc.shipments.create.useMutation({
+    onSuccess: (data) => {
+      toast.success("Shipment created! Redirecting...");
+      setLocation(`/tariff-calculator?shipmentId=${data.shipmentId}`);
     },
   });
 
   const handleSearch = () => {
-    if (searchQuery.trim()) {
-      searchMutation.refetch();
+    if (!query.trim()) {
+      toast.error("Please enter a search query");
+      return;
     }
+    refetch();
   };
 
-  const handleRecommend = () => {
-    if (productDescription.trim()) {
-      recommendMutation.mutate({ productDescription });
+  const handleCreateShipment = async (htsCode: string, description: string) => {
+    createShipmentMutation.mutate({
+      shipmentName: `Shipment - ${htsCode}`,
+      productDescription: description,
+    });
+  };
+
+  const getRiskColor = (level: string) => {
+    switch (level) {
+      case "low": return "bg-green-100 text-green-800";
+      case "medium": return "bg-yellow-100 text-yellow-800";
+      case "high": return "bg-red-100 text-red-800";
+      default: return "bg-gray-100 text-gray-800";
     }
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
-
+    <div className="min-h-screen">
       <div className="container py-12">
-        {/* Page Header */}
-        <div className="mb-12">
-          <div className="relative inline-block">
-            <div className="absolute -left-8 top-2 w-4 h-4 bg-primary"></div>
-            <h1 className="text-4xl font-bold">HTS Code Search & Lookup</h1>
-          </div>
-          <div className="w-24 h-1 bg-black mt-4"></div>
-          <p className="text-lg mt-4 text-muted-foreground max-w-3xl">
-            Search the Harmonized Tariff Schedule database or use AI to recommend codes based on product descriptions.
+        <div className="mb-8">
+          <div className="w-2 h-12 bg-primary mb-4"></div>
+          <h1 className="text-4xl font-bold mb-2">HTS Code Search</h1>
+          <p className="text-muted-foreground">
+            AI-powered search with detailed product classification and risk assessment
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-          {/* Manual Search */}
-          <Card className="border-black">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Search className="w-5 h-5" />
-                Manual Search
-              </CardTitle>
-              <CardDescription>
-                Search by HTS code, product name, or category
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Enter HTS code or product name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                  className="border-black"
-                />
-                <Button onClick={handleSearch} disabled={searchMutation.isLoading}>
-                  {searchMutation.isLoading ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4" />
-                  )}
-                </Button>
-              </div>
+        <div className="flex gap-4 mb-8">
+          <Input
+            placeholder="Search by product description (e.g., 'laptop computer')"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            className="flex-1"
+          />
+          <Button onClick={handleSearch} disabled={isLoading}>
+            <Search className="w-4 h-4 mr-2" />
+            {isLoading ? "Searching..." : "Search"}
+          </Button>
+        </div>
 
-              {searchMutation.data && searchMutation.data.length > 0 && (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {searchMutation.data.map((code) => (
-                    <div
-                      key={code.id}
-                      className="border border-black p-4 hover:bg-secondary transition-colors"
-                    >
-                      <div className="font-bold text-lg mb-1">{code.code}</div>
-                      <div className="text-sm mb-2">{code.description}</div>
-                      {code.category && (
-                        <div className="text-xs text-muted-foreground">
-                          Category: {code.category}
-                        </div>
-                      )}
-                      {code.unit && (
-                        <div className="text-xs text-muted-foreground">
-                          Unit: {code.unit}
-                        </div>
+        {results && results.length > 0 && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Found {results.length} results • All data is current as of {new Date().toLocaleDateString()}
+            </p>
+            {results.map((result: any, idx: number) => (
+              <Card key={idx} className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <h3 className="text-2xl font-bold font-mono">{result.code}</h3>
+                      <Badge className={getRiskColor(result.riskLevel)}>
+                        {result.riskLevel} risk
+                      </Badge>
+                      {result.confidence && (
+                        <span className="text-sm text-muted-foreground">
+                          {Math.round(result.confidence * 100)}% confidence
+                        </span>
                       )}
                     </div>
-                  ))}
+                    <p className="text-lg mb-3">{result.description}</p>
+                    <p className="text-sm text-muted-foreground">
+                      Estimated duty rate: <span className="font-mono font-bold">{result.dutyRate}</span>
+                    </p>
+                  </div>
+                  <Button onClick={() => handleCreateShipment(result.code, result.description)}>
+                    Start Workflow →
+                  </Button>
                 </div>
-              )}
 
-              {searchMutation.data && searchMutation.data.length === 0 && (
-                <div className="text-center py-8 text-muted-foreground">
-                  No results found. Try a different search term.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* AI Recommendations */}
-          <Card className="border-black">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5" />
-                AI-Powered Recommendations
-              </CardTitle>
-              <CardDescription>
-                Describe your product and get HTS code suggestions
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <Textarea
-                placeholder="Describe your product in detail (e.g., 'Cotton t-shirts for men, 100% cotton, short sleeve')"
-                value={productDescription}
-                onChange={(e) => setProductDescription(e.target.value)}
-                rows={4}
-                className="border-black"
-              />
-              <Button
-                onClick={handleRecommend}
-                disabled={recommendMutation.isPending}
-                className="w-full gap-2"
-              >
-                {recommendMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Generating Recommendations...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4" />
-                    Get AI Recommendations
-                  </>
+                {result.reasoning && (
+                  <div className="border-t pt-4 mt-4">
+                    <div className="flex items-start gap-2 mb-2">
+                      <Info className="w-4 h-4 mt-1 text-primary flex-shrink-0" />
+                      <div>
+                        <p className="font-bold text-sm mb-1">Why this code?</p>
+                        <p className="text-sm text-muted-foreground">{result.reasoning}</p>
+                      </div>
+                    </div>
+                  </div>
                 )}
-              </Button>
 
-              {recommendMutation.data && (
-                <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {recommendMutation.data.map((rec: any, index: number) => (
-                    <div
-                      key={index}
-                      className="border border-black p-4 hover:bg-secondary transition-colors"
-                    >
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="font-bold text-lg">{rec.code}</div>
-                        <div
-                          className={`text-xs px-2 py-1 border border-black ${
-                            rec.confidence === "high"
-                              ? "bg-primary text-white"
-                              : rec.confidence === "medium"
-                              ? "bg-secondary"
-                              : "bg-white"
-                          }`}
-                        >
-                          {rec.confidence.toUpperCase()}
+                {result.alternatives && result.alternatives.length > 0 && (
+                  <div className="border-t pt-4 mt-4">
+                    <p className="font-bold text-sm mb-2">Alternative Classifications:</p>
+                    <div className="space-y-2">
+                      {result.alternatives.slice(0, 2).map((alt: any, i: number) => (
+                        <div key={i} className="text-sm pl-4 border-l-2 border-border">
+                          <span className="font-mono font-bold">{alt.code}</span>
+                          {alt.reason && <span className="text-muted-foreground"> - {alt.reason}</span>}
                         </div>
-                      </div>
-                      <div className="text-sm mb-2">{rec.description}</div>
-                      <div className="text-xs text-muted-foreground">
-                        <strong>Why this matches:</strong> {rec.relevance}
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Information Section */}
-        <div className="border border-black p-8 bg-secondary">
-          <h3 className="text-xl font-bold mb-4">About HTS Codes</h3>
-          <div className="space-y-2 text-sm">
-            <p>
-              The Harmonized Tariff Schedule (HTS) provides duty rates for virtually every item that exists. 
-              It is a system of names and numbers used to classify traded products.
-            </p>
-            <p>
-              HTS codes are used by customs authorities around the world to identify products when assessing 
-              duties and taxes and for gathering statistics.
-            </p>
-            <p className="font-bold">
-              Accurate classification is critical for compliance and cost optimization.
-            </p>
+                  </div>
+                )}
+              </Card>
+            ))}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

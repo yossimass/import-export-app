@@ -1,193 +1,263 @@
 import { useState } from "react";
-import Navigation from "@/components/Navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Calculator, Loader2 } from "lucide-react";
+import { Calculator, Info } from "lucide-react";
 import { toast } from "sonner";
 
 export default function TariffCalculator() {
-  const [htsCode, setHtsCode] = useState("");
-  const [originCountry, setOriginCountry] = useState("");
-  const [destinationCountry, setDestinationCountry] = useState("");
-  const [value, setValue] = useState("");
+  const [formData, setFormData] = useState({
+    htsCode: "",
+    originCountry: "",
+    destinationCountry: "",
+    value: "",
+    quantity: "",
+    weight: "",
+    incoterm: "",
+    freightCost: "",
+    insuranceCost: "",
+  });
 
   const calculateMutation = trpc.tariff.calculate.useMutation({
-    onSuccess: () => {
-      toast.success("Tariff calculated successfully");
-    },
-    onError: (error) => {
-      toast.error("Calculation failed: " + error.message);
-    },
+    onSuccess: () => toast.success("Calculation complete!"),
+    onError: (error) => toast.error(error.message),
   });
 
   const handleCalculate = () => {
-    if (!htsCode || !originCountry || !destinationCountry || !value) {
-      toast.error("Please fill in all fields");
+    if (!formData.htsCode || !formData.originCountry || !formData.destinationCountry || !formData.value) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
     calculateMutation.mutate({
-      htsCode,
-      originCountry: originCountry.toUpperCase(),
-      destinationCountry: destinationCountry.toUpperCase(),
-      value: parseFloat(value),
+      htsCode: formData.htsCode,
+      originCountry: formData.originCountry,
+      destinationCountry: formData.destinationCountry,
+      value: parseFloat(formData.value),
+      quantity: formData.quantity ? parseFloat(formData.quantity) : undefined,
+      weight: formData.weight ? parseFloat(formData.weight) : undefined,
+      incoterm: formData.incoterm || undefined,
+      freightCost: formData.freightCost ? parseFloat(formData.freightCost) : undefined,
+      insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
     });
   };
 
-  return (
-    <div className="min-h-screen bg-white">
-      <Navigation />
+  const result = calculateMutation.data;
 
+  return (
+    <div className="min-h-screen">
       <div className="container py-12">
-        <div className="mb-12">
-          <div className="relative inline-block">
-            <div className="absolute -left-8 top-2 w-4 h-4 bg-primary"></div>
-            <h1 className="text-4xl font-bold">Tariff Calculator</h1>
-          </div>
-          <div className="w-24 h-1 bg-black mt-4"></div>
-          <p className="text-lg mt-4 text-muted-foreground max-w-3xl">
-            Calculate import duties, tariffs, and total costs for your shipments.
+        <div className="mb-8">
+          <div className="w-2 h-12 bg-primary mb-4"></div>
+          <h1 className="text-4xl font-bold mb-2">Tariff Calculator</h1>
+          <p className="text-muted-foreground">
+            Calculate duties with MFN rates, trade agreements, and landed cost breakdown
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <Card className="border-black">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Calculator className="w-5 h-5" />
-                Calculate Tariff
-              </CardTitle>
-              <CardDescription>
-                Enter shipment details to calculate duties and taxes
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>HTS Code</Label>
+        <div className="grid lg:grid-cols-2 gap-8">
+          <Card className="p-6">
+            <h2 className="text-xl font-bold mb-6">Shipment Details</h2>
+            
+            <div className="space-y-4">
+              <div>
+                <Label>HTS Code *</Label>
                 <Input
-                  placeholder="e.g., 6109.10.00"
-                  value={htsCode}
-                  onChange={(e) => setHtsCode(e.target.value)}
-                  className="border-black"
+                  placeholder="e.g., 8471.30.01"
+                  value={formData.htsCode}
+                  onChange={(e) => setFormData({ ...formData, htsCode: e.target.value })}
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Origin Country (ISO 3-letter code)</Label>
-                <Input
-                  placeholder="e.g., CHN"
-                  value={originCountry}
-                  onChange={(e) => setOriginCountry(e.target.value)}
-                  className="border-black"
-                  maxLength={3}
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Origin Country *</Label>
+                  <Input
+                    placeholder="e.g., CHN"
+                    value={formData.originCountry}
+                    onChange={(e) => setFormData({ ...formData, originCountry: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Destination Country *</Label>
+                  <Input
+                    placeholder="e.g., USA"
+                    value={formData.destinationCountry}
+                    onChange={(e) => setFormData({ ...formData, destinationCountry: e.target.value })}
+                  />
+                </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Destination Country (ISO 3-letter code)</Label>
-                <Input
-                  placeholder="e.g., USA"
-                  value={destinationCountry}
-                  onChange={(e) => setDestinationCountry(e.target.value)}
-                  className="border-black"
-                  maxLength={3}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Shipment Value (USD)</Label>
+              <div>
+                <Label>Merchandise Value (USD) *</Label>
                 <Input
                   type="number"
-                  placeholder="e.g., 10000"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  className="border-black"
-                  min="0"
-                  step="0.01"
+                  placeholder="10000"
+                  value={formData.value}
+                  onChange={(e) => setFormData({ ...formData, value: e.target.value })}
                 />
               </div>
 
-              <Button
-                onClick={handleCalculate}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Quantity</Label>
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Weight (kg)</Label>
+                  <Input
+                    type="number"
+                    placeholder="500"
+                    value={formData.weight}
+                    onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label>Incoterm</Label>
+                <Select value={formData.incoterm} onValueChange={(val) => setFormData({ ...formData, incoterm: val })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select incoterm" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FOB">FOB - Free On Board</SelectItem>
+                    <SelectItem value="CIF">CIF - Cost, Insurance, Freight</SelectItem>
+                    <SelectItem value="DDP">DDP - Delivered Duty Paid</SelectItem>
+                    <SelectItem value="EXW">EXW - Ex Works</SelectItem>
+                    <SelectItem value="FCA">FCA - Free Carrier</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Freight Cost (USD)</Label>
+                  <Input
+                    type="number"
+                    placeholder="500"
+                    value={formData.freightCost}
+                    onChange={(e) => setFormData({ ...formData, freightCost: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Insurance Cost (USD)</Label>
+                  <Input
+                    type="number"
+                    placeholder="100"
+                    value={formData.insuranceCost}
+                    onChange={(e) => setFormData({ ...formData, insuranceCost: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <Button 
+                onClick={handleCalculate} 
                 disabled={calculateMutation.isPending}
-                className="w-full gap-2"
+                className="w-full"
+                size="lg"
               >
-                {calculateMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Calculating...
-                  </>
-                ) : (
-                  <>
-                    <Calculator className="w-4 h-4" />
-                    Calculate Tariff
-                  </>
-                )}
+                <Calculator className="w-4 h-4 mr-2" />
+                {calculateMutation.isPending ? "Calculating..." : "Calculate Tariff"}
               </Button>
-            </CardContent>
+            </div>
           </Card>
 
-          <div>
-            {calculateMutation.data && (
-              <Card className="border-black">
-                <CardHeader>
-                  <CardTitle>Calculation Results</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="border border-black p-4">
-                    <div className="text-sm text-muted-foreground mb-1">HTS Code</div>
-                    <div className="text-2xl font-bold">{calculateMutation.data.htsCode}</div>
-                  </div>
+          {result && (
+            <div className="space-y-6">
+              <Card className="p-6 bg-primary text-primary-foreground">
+                <h3 className="text-sm font-bold mb-2">LANDED COST</h3>
+                <p className="text-4xl font-bold">${result.landedCost?.toFixed(2) || "0.00"}</p>
+              </Card>
 
-                  <div className="border border-black p-4">
-                    <div className="text-sm text-muted-foreground mb-1">Tariff Rate</div>
-                    <div className="text-2xl font-bold">{calculateMutation.data.rate}%</div>
+              <Card className="p-6">
+                <h3 className="font-bold mb-4">Duty Breakdown</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">MFN Rate</span>
+                    <span className="font-mono font-bold">{result.mfnRate}%</span>
                   </div>
-
-                  <div className="border border-black p-4">
-                    <div className="text-sm text-muted-foreground mb-1">Duty Amount</div>
-                    <div className="text-2xl font-bold">
-                      ${calculateMutation.data.dutyAmount.toFixed(2)}
-                    </div>
-                  </div>
-
-                  <div className="border border-black p-4 bg-primary text-white">
-                    <div className="text-sm mb-1">Total Value (including duties)</div>
-                    <div className="text-3xl font-bold">
-                      ${calculateMutation.data.totalValue.toFixed(2)}
-                    </div>
-                  </div>
-
-                  {calculateMutation.data.tradeAgreement && (
-                    <div className="border border-black p-4 bg-secondary">
-                      <div className="text-sm font-bold mb-1">Trade Agreement</div>
-                      <div>{calculateMutation.data.tradeAgreement}</div>
+                  {result.preferentialRate && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Preferential Rate</span>
+                      <span className="font-mono font-bold text-green-600">{result.preferentialRate}%</span>
                     </div>
                   )}
-
-                  {calculateMutation.data.message && (
-                    <div className="text-sm text-muted-foreground p-4 border border-black">
-                      {calculateMutation.data.message}
+                  {result.additionalDuties > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Additional Duties</span>
+                      <span className="font-mono font-bold text-red-600">{result.additionalDuties}%</span>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            )}
-
-            {!calculateMutation.data && (
-              <Card className="border-black">
-                <CardContent className="pt-6">
-                  <div className="text-center py-12 text-muted-foreground">
-                    <Calculator className="w-16 h-16 mx-auto mb-4 opacity-50" />
-                    <p>Enter shipment details to calculate tariffs</p>
+                  <div className="flex justify-between border-t pt-3">
+                    <span className="font-bold">Applied Rate</span>
+                    <span className="font-mono font-bold text-lg">{result.appliedRate}%</span>
                   </div>
-                </CardContent>
+                </div>
               </Card>
-            )}
-          </div>
+
+              {result.tradeAgreement && (
+                <Card className="p-6 bg-green-50">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-5 h-5 text-green-600 mt-1" />
+                    <div>
+                      <p className="font-bold text-green-900">Trade Agreement Applied</p>
+                      <p className="text-sm text-green-700">{result.tradeAgreement}</p>
+                    </div>
+                  </div>
+                </Card>
+              )}
+
+              <Card className="p-6">
+                <h3 className="font-bold mb-4">Cost Summary</h3>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Duty Amount</span>
+                    <span className="font-mono">${result.dutyAmount?.toFixed(2)}</span>
+                  </div>
+                  {result.mpf > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span>MPF</span>
+                      <span className="font-mono">${result.mpf?.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {result.hmf > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span>HMF</span>
+                      <span className="font-mono">${result.hmf?.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between border-t pt-2 font-bold">
+                    <span>Total Duties & Fees</span>
+                    <span className="font-mono">${result.totalDuties?.toFixed(2)}</span>
+                  </div>
+                </div>
+              </Card>
+
+              {result.rationale && (
+                <Card className="p-6">
+                  <div className="flex items-start gap-2">
+                    <Info className="w-5 h-5 text-primary mt-1" />
+                    <div>
+                      <p className="font-bold mb-2">Calculation Rationale</p>
+                      <p className="text-sm text-muted-foreground">{result.rationale}</p>
+                      {result.rateSource && (
+                        <p className="text-xs text-muted-foreground mt-2">Source: {result.rateSource}</p>
+                      )}
+                    </div>
+                  </div>
+                </Card>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
