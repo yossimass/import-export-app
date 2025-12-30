@@ -21,20 +21,25 @@ export default function Utilities() {
   const [shipOrigin, setShipOrigin] = useState("");
   const [shipDest, setShipDest] = useState("");
 
-  const convertMutation = trpc.utils.convertCurrency.useMutation({
-    onError: (error) => toast.error("Conversion failed: " + error.message),
-  });
+  const [convertParams, setConvertParams] = useState<any>(null);
+  const [estimateParams, setEstimateParams] = useState<any>(null);
 
-  const estimateMutation = trpc.utils.estimateShipping.useMutation({
-    onError: (error) => toast.error("Estimation failed: " + error.message),
-  });
+  const convertQuery = trpc.utilities.convertCurrency.useQuery(
+    convertParams,
+    { enabled: !!convertParams }
+  );
+
+  const estimateQuery = trpc.utilities.estimateShipping.useQuery(
+    estimateParams,
+    { enabled: !!estimateParams }
+  );
 
   const handleConvert = () => {
     if (!amount) {
       toast.error("Please enter an amount");
       return;
     }
-    convertMutation.mutate({
+    setConvertParams({
       amount: parseFloat(amount),
       from: fromCurrency,
       to: toCurrency,
@@ -46,13 +51,16 @@ export default function Utilities() {
       toast.error("Please fill in all fields");
       return;
     }
-    estimateMutation.mutate({
+    setEstimateParams({
       weight: parseFloat(weight),
-      length: parseFloat(length),
-      width: parseFloat(width),
-      height: parseFloat(height),
+      dimensions: {
+        length: parseFloat(length),
+        width: parseFloat(width),
+        height: parseFloat(height),
+      },
       originCountry: shipOrigin.toUpperCase(),
       destinationCountry: shipDest.toUpperCase(),
+      shippingMethod: 'sea' as const,
     });
   };
 
@@ -123,10 +131,10 @@ export default function Utilities() {
 
                   <Button
                     onClick={handleConvert}
-                    disabled={convertMutation.isPending}
+                    disabled={convertQuery.isFetching}
                     className="w-full"
                   >
-                    {convertMutation.isPending ? (
+                    {convertQuery.isFetching ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       "Convert"
@@ -135,17 +143,17 @@ export default function Utilities() {
                 </CardContent>
               </Card>
 
-              {convertMutation.data && (
+              {convertQuery.data && (
                 <Card className="border-black">
                   <CardHeader>
                     <CardTitle>Result</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-4xl font-bold mb-4">
-                      {convertMutation.data.converted.toFixed(2)} {convertMutation.data.to}
+                      {convertQuery.data.convertedAmount.toFixed(2)} {toCurrency}
                     </div>
                     <div className="text-sm text-muted-foreground">
-                      Rate: 1 {convertMutation.data.from} = {convertMutation.data.rate.toFixed(4)} {convertMutation.data.to}
+                      Rate: 1 {fromCurrency} = {convertQuery.data.exchangeRate.toFixed(4)} {toCurrency}
                     </div>
                   </CardContent>
                 </Card>
@@ -229,10 +237,10 @@ export default function Utilities() {
 
                   <Button
                     onClick={handleEstimate}
-                    disabled={estimateMutation.isPending}
+                    disabled={estimateQuery.isFetching}
                     className="w-full"
                   >
-                    {estimateMutation.isPending ? (
+                    {estimateQuery.isFetching ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       "Estimate"
@@ -241,18 +249,18 @@ export default function Utilities() {
                 </CardContent>
               </Card>
 
-              {estimateMutation.data && (
+              {estimateQuery.data && (
                 <Card className="border-black">
                   <CardHeader>
                     <CardTitle>Estimate</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="text-4xl font-bold mb-4">
-                      ${estimateMutation.data.estimatedCost.toFixed(2)}
+                      ${estimateQuery.data.estimatedCost.toFixed(2)}
                     </div>
                     <div className="text-sm space-y-1">
-                      <div>Chargeable Weight: {estimateMutation.data.chargeableWeight} kg</div>
-                      <div className="text-muted-foreground">{estimateMutation.data.note}</div>
+                      <div>Transit Time: {estimateQuery.data.transitDays} days</div>
+                      <div className="text-muted-foreground">Carrier: {estimateQuery.data.carrier}</div>
                     </div>
                   </CardContent>
                 </Card>

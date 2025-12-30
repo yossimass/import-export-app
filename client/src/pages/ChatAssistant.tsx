@@ -8,7 +8,7 @@ export default function ChatAssistant() {
   const [sessionId] = useState(() => `session-${Date.now()}`);
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
 
-  const historyQuery = trpc.chat.history.useQuery({ sessionId });
+  const historyQuery = trpc.chat.getHistory.useQuery({ conversationId: sessionId });
   const sendMutation = trpc.chat.send.useMutation({
     onSuccess: (data) => {
       setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
@@ -17,7 +17,7 @@ export default function ChatAssistant() {
 
   const handleSend = (message: string) => {
     setMessages(prev => [...prev, { role: "user", content: message }]);
-    sendMutation.mutate({ message, sessionId });
+    sendMutation.mutate({ message, conversationId: sessionId });
   };
 
   return (

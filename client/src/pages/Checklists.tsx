@@ -35,9 +35,10 @@ export default function Checklists() {
     }
 
     generateMutation.mutate({
+      shipmentType: 'import',
       originCountry: originCountry.toUpperCase(),
       destinationCountry: destinationCountry.toUpperCase(),
-      productDescription,
+      productCategory: productDescription,
     });
   };
 

@@ -9,7 +9,7 @@ import { FolderOpen, Upload, Trash2, Download, Loader2, FileText } from "lucide-
 import { toast } from "sonner";
 
 export default function Documents() {
-  const documentsQuery = trpc.documents.list.useQuery({});
+  const documentsQuery = trpc.documents.list.useQuery();
 
   return (
     <div className="min-h-screen bg-white">

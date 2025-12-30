@@ -1,29 +1,11 @@
-import { eq, and, like, or, desc, gte, lte, sql } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { 
-  InsertUser, 
-  users, 
-  htsCodes, 
-  InsertHtsCode,
-  tariffRates,
-  InsertTariffRate,
-  tradeRegulations,
-  InsertTradeRegulation,
-  tradeDocuments,
-  InsertTradeDocument,
-  alertPreferences,
-  InsertAlertPreference,
-  alerts,
-  InsertAlert,
-  complianceChecklists,
-  InsertComplianceChecklist,
-  chatMessages,
-  InsertChatMessage
-} from "../drizzle/schema";
+import { InsertUser, users, tradeDocuments, complianceChecklists, alerts, chatMessages } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+// Lazily create the drizzle instance so local tooling can run without a DB.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
@@ -35,8 +17,6 @@ export async function getDb() {
   }
   return _db;
 }
-
-// ==================== User Management ====================
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) {
@@ -105,249 +85,203 @@ export async function getUserByOpenId(openId: string) {
   }
 
   const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
+
   return result.length > 0 ? result[0] : undefined;
 }
 
-// ==================== HTS Codes ====================
-
-export async function searchHtsCodes(query: string, limit: number = 50) {
+// Documents
+export async function getUserDocuments(userId: number) {
   const db = await getDb();
   if (!db) return [];
-
-  const searchPattern = `%${query}%`;
-  return db.select()
-    .from(htsCodes)
-    .where(
-      or(
-        like(htsCodes.code, searchPattern),
-        like(htsCodes.description, searchPattern),
-        like(htsCodes.category, searchPattern)
-      )
-    )
-    .limit(limit);
+  return await db.select().from(tradeDocuments).where(eq(tradeDocuments.userId, userId)).orderBy(desc(tradeDocuments.createdAt));
 }
 
-export async function getHtsCodeByCode(code: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db.select().from(htsCodes).where(eq(htsCodes.code, code)).limit(1);
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function createHtsCode(data: InsertHtsCode) {
+export async function createDocument(data: {
+  userId: number;
+  filename: string;
+  fileUrl: string;
+  fileKey: string;
+  documentType: string;
+  description?: string;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  const result = await db.insert(htsCodes).values(data);
-  return result;
-}
-
-// ==================== Tariff Rates ====================
-
-export async function getTariffRate(htsCodeId: number, originCountry: string, destinationCountry: string) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const now = new Date();
-  const result = await db.select()
-    .from(tariffRates)
-    .where(
-      and(
-        eq(tariffRates.htsCodeId, htsCodeId),
-        eq(tariffRates.originCountry, originCountry),
-        eq(tariffRates.destinationCountry, destinationCountry),
-        lte(tariffRates.effectiveDate, now),
-        or(
-          sql`${tariffRates.expiryDate} IS NULL`,
-          gte(tariffRates.expiryDate, now)
-        )
-      )
-    )
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function createTariffRate(data: InsertTariffRate) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  return db.insert(tariffRates).values(data);
-}
-
-// ==================== Trade Regulations ====================
-
-export async function getTradeRegulations(countryCode: string, regulationType?: string) {
-  const db = await getDb();
-  if (!db) return [];
-
-  const conditions = [eq(tradeRegulations.countryCode, countryCode)];
-  if (regulationType) {
-    conditions.push(eq(tradeRegulations.regulationType, regulationType));
-  }
-
-  return db.select()
-    .from(tradeRegulations)
-    .where(and(...conditions))
-    .orderBy(desc(tradeRegulations.effectiveDate));
-}
-
-export async function createTradeRegulation(data: InsertTradeRegulation) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  return db.insert(tradeRegulations).values(data);
-}
-
-// ==================== Trade Documents ====================
-
-export async function getUserDocuments(userId: number, documentType?: string) {
-  const db = await getDb();
-  if (!db) return [];
-
-  const conditions = [eq(tradeDocuments.userId, userId)];
-  if (documentType) {
-    conditions.push(eq(tradeDocuments.documentType, documentType as any));
-  }
-
-  return db.select()
-    .from(tradeDocuments)
-    .where(and(...conditions))
-    .orderBy(desc(tradeDocuments.createdAt));
-}
-
-export async function createTradeDocument(data: InsertTradeDocument) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  const result = await db.insert(tradeDocuments).values(data);
-  return result;
-}
-
-export async function deleteTradeDocument(id: number, userId: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  return db.delete(tradeDocuments)
-    .where(and(eq(tradeDocuments.id, id), eq(tradeDocuments.userId, userId)));
-}
-
-// ==================== Alert Preferences ====================
-
-export async function getAlertPreferences(userId: number) {
-  const db = await getDb();
-  if (!db) return undefined;
-
-  const result = await db.select()
-    .from(alertPreferences)
-    .where(eq(alertPreferences.userId, userId))
-    .limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-export async function upsertAlertPreferences(data: InsertAlertPreference) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  return db.insert(alertPreferences).values(data).onDuplicateKeyUpdate({
-    set: {
-      tariffChanges: data.tariffChanges,
-      regulationUpdates: data.regulationUpdates,
-      licenseRenewals: data.licenseRenewals,
-      shipmentUpdates: data.shipmentUpdates,
-      emailNotifications: data.emailNotifications,
-      updatedAt: new Date(),
-    },
+  
+  const result = await db.insert(tradeDocuments).values({
+    userId: data.userId,
+    documentType: data.documentType as any,
+    title: data.filename,
+    description: data.description || null,
+    fileKey: data.fileKey,
+    fileUrl: data.fileUrl,
+    fileName: data.filename,
   });
+  return { id: Number((result as any).insertId), ...data };
 }
 
-// ==================== Alerts ====================
-
-export async function getUserAlerts(userId: number, unreadOnly: boolean = false) {
-  const db = await getDb();
-  if (!db) return [];
-
-  const conditions = [eq(alerts.userId, userId)];
-  if (unreadOnly) {
-    conditions.push(eq(alerts.isRead, false));
-  }
-
-  return db.select()
-    .from(alerts)
-    .where(and(...conditions))
-    .orderBy(desc(alerts.sentAt));
-}
-
-export async function createAlert(data: InsertAlert) {
+export async function deleteDocument(documentId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.insert(alerts).values(data);
+  
+  await db.delete(tradeDocuments).where(and(eq(tradeDocuments.id, documentId), eq(tradeDocuments.userId, userId)));
+  return { success: true };
 }
 
-export async function markAlertAsRead(id: number, userId: number) {
+// Checklists
+export async function createChecklist(data: {
+  userId: number;
+  title: string;
+  shipmentType: string;
+  originCountry: string;
+  destinationCountry: string;
+  items: any;
+}) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.update(alerts)
-    .set({ isRead: true })
-    .where(and(eq(alerts.id, id), eq(alerts.userId, userId)));
+  
+  const result = await db.insert(complianceChecklists).values({
+    userId: data.userId,
+    title: data.title,
+    originCountry: data.originCountry,
+    destinationCountry: data.destinationCountry,
+    checklistItems: JSON.stringify(data.items),
+  });
+  return Number((result as any).insertId);
 }
-
-// ==================== Compliance Checklists ====================
 
 export async function getUserChecklists(userId: number) {
   const db = await getDb();
   if (!db) return [];
-
-  return db.select()
-    .from(complianceChecklists)
-    .where(eq(complianceChecklists.userId, userId))
-    .orderBy(desc(complianceChecklists.updatedAt));
+  
+  const results = await db.select().from(complianceChecklists).where(eq(complianceChecklists.userId, userId)).orderBy(desc(complianceChecklists.createdAt));
+  return results.map(r => ({
+    ...r,
+    items: JSON.parse(r.checklistItems as string),
+  }));
 }
 
-export async function createChecklist(data: InsertComplianceChecklist) {
+export async function getChecklist(checklistId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.insert(complianceChecklists).values(data);
+  
+  const results = await db.select().from(complianceChecklists).where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId))).limit(1);
+  if (results.length === 0) return null;
+  
+  return {
+    ...results[0],
+    items: JSON.parse(results[0].checklistItems as string),
+  };
 }
 
-export async function updateChecklist(id: number, userId: number, updates: Partial<InsertComplianceChecklist>) {
+export async function updateChecklistItem(checklistId: number, userId: number, itemIndex: number, completed: boolean) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.update(complianceChecklists)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(and(eq(complianceChecklists.id, id), eq(complianceChecklists.userId, userId)));
+  
+  const checklist = await getChecklist(checklistId, userId);
+  if (!checklist) throw new Error("Checklist not found");
+  
+  const items = checklist.items;
+  if (itemIndex < 0 || itemIndex >= items.length) throw new Error("Invalid item index");
+  
+  items[itemIndex].completed = completed;
+  
+  await db.update(complianceChecklists)
+    .set({ checklistItems: JSON.stringify(items) })
+    .where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId)));
+  
+  return { success: true };
 }
 
-export async function deleteChecklist(id: number, userId: number) {
+export async function deleteChecklist(checklistId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-
-  return db.delete(complianceChecklists)
-    .where(and(eq(complianceChecklists.id, id), eq(complianceChecklists.userId, userId)));
+  
+  await db.delete(complianceChecklists).where(and(eq(complianceChecklists.id, checklistId), eq(complianceChecklists.userId, userId)));
+  return { success: true };
 }
 
-// ==================== Chat Messages ====================
+// Alerts
+export async function createAlert(data: {
+  userId: number;
+  alertType: string;
+  htsCode?: string;
+  countryCode?: string;
+  email: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  const result = await db.insert(alerts).values({
+    userId: data.userId,
+    alertType: data.alertType as any,
+    title: `Alert for ${data.alertType}`,
+    message: `Monitoring ${data.alertType} for ${data.htsCode || data.countryCode || 'all'}`,
+  });
+  return { id: Number((result as any).insertId), ...data };
+}
 
-export async function getChatHistory(userId: number, sessionId: string, limit: number = 50) {
+export async function getUserAlerts(userId: number) {
   const db = await getDb();
   if (!db) return [];
-
-  return db.select()
-    .from(chatMessages)
-    .where(and(eq(chatMessages.userId, userId), eq(chatMessages.sessionId, sessionId)))
-    .orderBy(chatMessages.createdAt)
-    .limit(limit);
+  return await db.select().from(alerts).where(eq(alerts.userId, userId)).orderBy(desc(alerts.createdAt));
 }
 
-export async function saveChatMessage(data: InsertChatMessage) {
+export async function deleteAlert(alertId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+  
+  await db.delete(alerts).where(and(eq(alerts.id, alertId), eq(alerts.userId, userId)));
+  return { success: true };
+}
 
-  return db.insert(chatMessages).values(data);
+// Chat
+export async function createConversation(userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  // Generate unique session ID
+  const sessionId = `session_${userId}_${Date.now()}`;
+  return sessionId;
+}
+
+export async function getUserConversations(userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  // Get unique sessions for this user
+  const messages = await db.select().from(chatMessages).where(eq(chatMessages.userId, userId)).orderBy(desc(chatMessages.createdAt));
+  const sessions = new Map();
+  
+  messages.forEach(msg => {
+    if (!sessions.has(msg.sessionId)) {
+      sessions.set(msg.sessionId, {
+        id: msg.sessionId,
+        userId: msg.userId,
+        createdAt: msg.createdAt,
+      });
+    }
+  });
+  
+  return Array.from(sessions.values());
+}
+
+export async function saveChatMessage(sessionId: string, role: string, content: string, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  
+  await db.insert(chatMessages).values({
+    userId,
+    sessionId,
+    role: role as any,
+    content,
+  });
+}
+
+export async function getChatHistory(sessionId: string, userId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  
+  return await db.select().from(chatMessages)
+    .where(and(eq(chatMessages.sessionId, sessionId), eq(chatMessages.userId, userId)))
+    .orderBy(chatMessages.createdAt);
 }
