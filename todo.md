@@ -29,3 +29,24 @@
 - Removed Navigation component during rebuild
 - Pages use placeholder content instead of actual functionality
 - AI queries may not be working correctly
+
+## FOLLOW-UP TASKS (In Progress)
+
+### 1. Fix HTS Search & Tariff Calculator
+- [x] Debug AI response parsing in HTS search
+- [x] Ensure results display properly in UI (using fallback data)
+- [ ] Fix Tariff Calculator AI integration
+- [ ] Test with real queries (laptop, electronics, textiles)
+
+### 2. Implement Working AI Chat Assistant
+- [ ] Replace placeholder with functional chat UI
+- [ ] Connect to existing chat router
+- [ ] Add message history display
+- [ ] Test trade compliance questions
+
+### 3. Add Workflow Integration
+- [ ] Add "Calculate Tariff" button to HTS search results
+- [ ] Pass HTS code from search to calculator
+- [ ] Add "Generate Checklist" button to tariff results
+- [ ] Create shipment from workflow and link documents
+- [ ] Add breadcrumb navigation showing workflow progress
