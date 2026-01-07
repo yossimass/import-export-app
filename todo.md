@@ -131,3 +131,25 @@ Progress is visually tracked with the workflow stepper on each page.
 - [x] Fixed URL parsing to use window.location.search instead of wouter location
 - [x] Tested complete flow: My Shipments → Resume → Documents → Checklists
 - [x] Verified: HTS code 4201.00.3000, ARG→USA auto-fills on Checklists page
+
+
+## 📥 NEW FEATURE: Export Functionality (1/7/2026)
+
+### Tariff Calculator Exports ✅ COMPLETE
+- [x] Add PDF export button for tariff calculation results
+- [x] Add CSV export button for tariff calculation results
+- [x] PDF includes: HTS code, countries, all duty breakdowns, cost summary, calculation date
+- [x] CSV includes: all numerical data in spreadsheet format
+- [x] Tested: Both exports working with success toast notifications
+
+### Compliance Checklist Exports ✅ COMPLETE
+- [x] Add PDF export button for generated checklists
+- [x] PDF includes: checklist items, requirements, deadlines, consequences
+- [x] Format as printable checklist with checkboxes
+- [x] Tested: 12-item checklist exported successfully for China→USA cotton t-shirts
+
+### Regulations Export ✅ COMPLETE
+- [x] Add PDF export button for regulations search results
+- [x] PDF includes: all regulations with descriptions, requirements, documents, risk levels
+- [x] Format as comprehensive regulations summary document
+- [x] Export button added to Regulations page

@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { Search, Globe, AlertTriangle, FileText, Shield } from "lucide-react";
+import { Search, Globe, AlertTriangle, FileText, Shield, FileDown } from "lucide-react";
+import { exportRegulationsPDF } from "@/lib/exportUtils";
 import { toast } from "sonner";
 
 export default function Regulations() {
@@ -76,14 +77,30 @@ export default function Regulations() {
 
         {regulations && regulations.length > 0 && (
           <div className="space-y-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Globe className="w-8 h-8 text-primary" />
-              <div>
-                <h2 className="text-2xl font-bold">{country}</h2>
-                <p className="text-sm text-muted-foreground">
-                  Found {regulations.length} regulations • Current as of {new Date().toLocaleDateString()}
-                </p>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <Globe className="w-8 h-8 text-primary" />
+                <div>
+                  <h2 className="text-2xl font-bold">{country}</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Found {regulations.length} regulations • Current as of {new Date().toLocaleDateString()}
+                  </p>
+                </div>
               </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!regulations) return;
+                  exportRegulationsPDF({
+                    country,
+                    regulations,
+                  });
+                  toast.success('Regulations exported as PDF');
+                }}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Export PDF
+              </Button>
             </div>
 
             {regulations.map((reg: any, i: number) => (

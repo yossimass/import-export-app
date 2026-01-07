@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
-import { CheckSquare, Plus } from "lucide-react";
+import { CheckSquare, Plus, FileDown } from "lucide-react";
+import { exportChecklistPDF } from "@/lib/exportUtils";
 import { toast } from "sonner";
 
 export default function Checklists() {
@@ -120,14 +121,32 @@ export default function Checklists() {
 
         {checklist && (
           <Card className="p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <CheckSquare className="w-8 h-8 text-primary" />
-              <div>
-                <h2 className="text-2xl font-bold">Compliance Checklist</h2>
-                <p className="text-sm text-muted-foreground">
-                  {checklist.items?.length || 0} items • Generated {new Date().toLocaleDateString()}
-                </p>
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <CheckSquare className="w-8 h-8 text-primary" />
+                <div>
+                  <h2 className="text-2xl font-bold">Compliance Checklist</h2>
+                  <p className="text-sm text-muted-foreground">
+                    {checklist.items?.length || 0} items • Generated {new Date().toLocaleDateString()}
+                  </p>
+                </div>
               </div>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  if (!checklist) return;
+                  exportChecklistPDF({
+                    htsCode,
+                    origin,
+                    destination,
+                    items: checklist.items || [],
+                  });
+                  toast.success('Checklist exported as PDF');
+                }}
+              >
+                <FileDown className="h-4 w-4 mr-2" />
+                Export PDF
+              </Button>
             </div>
 
             <div className="space-y-4">

@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Calculator, Info, TrendingUp, DollarSign, Package } from "lucide-react";
+import { Calculator, Info, TrendingUp, DollarSign, Package, FileDown, FileSpreadsheet } from "lucide-react";
+import { exportTariffPDF, exportTariffCSV } from "@/lib/exportUtils";
 import { toast } from "sonner";
 import { COUNTRIES } from "@/../../shared/countries";
 
@@ -367,6 +368,61 @@ export default function TariffCalculator() {
                   </div>
                 </Card>
               )}
+
+              {/* Export Buttons */}
+              <div className="flex gap-3 mb-4">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    if (!result) return;
+                    exportTariffPDF({
+                      htsCode: formData.htsCode,
+                      origin: formData.originCountry,
+                      destination: formData.destinationCountry,
+                      value: parseFloat(formData.value),
+                      freight: parseFloat(formData.freightCost),
+                      insurance: parseFloat(formData.insuranceCost),
+                      appliedRate: result.appliedRate || 'N/A',
+                      dutyAmount: result.dutyAmount || 0,
+                      additionalDuties: result.additionalDuties || 0,
+                      totalDuties: (result.dutyAmount || 0) + (result.additionalDuties || 0),
+                      landedCost: result.landedCost || 0,
+                      tradeAgreement: result.tradeAgreement,
+                      calculationDate: new Date().toISOString(),
+                    });
+                    toast.success('PDF exported successfully');
+                  }}
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Export PDF
+                </Button>
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => {
+                    if (!result) return;
+                    exportTariffCSV({
+                      htsCode: formData.htsCode,
+                      origin: formData.originCountry,
+                      destination: formData.destinationCountry,
+                      value: parseFloat(formData.value),
+                      freight: parseFloat(formData.freightCost),
+                      insurance: parseFloat(formData.insuranceCost),
+                      appliedRate: result.appliedRate || 'N/A',
+                      dutyAmount: result.dutyAmount || 0,
+                      additionalDuties: result.additionalDuties || 0,
+                      totalDuties: (result.dutyAmount || 0) + (result.additionalDuties || 0),
+                      landedCost: result.landedCost || 0,
+                      tradeAgreement: result.tradeAgreement,
+                    });
+                    toast.success('CSV exported successfully');
+                  }}
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Export CSV
+                </Button>
+              </div>
 
               {/* Save & Continue Button */}
               <Button
