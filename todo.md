@@ -64,3 +64,12 @@
 **Database**: Simplified schema
 - Only stores user-generated content (shipments, documents, alerts, chat)
 - All trade data (HTS codes, tariffs, regulations) from AI in real-time
+
+
+## LATEST FIX (1/7/2026)
+- [x] HTS search now returns accurate, query-specific HTS codes
+- [x] AI prompt improved with explicit JSON structure requirements
+- [x] Tested successfully with:
+  * "cotton t-shirt" → 10 textile HTS codes (6109.10.xxxx)
+  * "wooden dining table" → 10 furniture HTS codes (9403.60.xxxx)
+- [x] All results include duty rates, risk levels, reasoning, alternatives, confidence scores

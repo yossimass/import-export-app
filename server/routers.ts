@@ -112,11 +112,25 @@ export const appRouter = router({
           messages: [
             {
               role: "system",
-              content: "You are an HTS code classification expert. Return results in JSON format with a 'results' array. Each result must have: code (string), description (string), dutyRate (string like '5.5%' or '0%'), riskLevel ('low'|'medium'|'high'), reasoning (string), alternatives (array of {code, reason}), confidence (number 0-1)."
+              content: `You are an expert in Harmonized Tariff Schedule (HTS) classification. You MUST return valid JSON with this exact structure:
+{
+  "results": [
+    {
+      "code": "1234.56.78",
+      "description": "Detailed product description",
+      "dutyRate": "5.5%",
+      "riskLevel": "low",
+      "reasoning": "Why this code applies",
+      "alternatives": [{"code": "1234.56.79", "reason": "Alternative classification"}],
+      "confidence": 0.9
+    }
+  ]
+}
+ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
             },
             {
               role: "user",
-              content: `Find the most accurate HTS codes for this product: "${input.query}". Provide ${input.limit || 5} results ranked by relevance. Include current 2025 duty rates, risk assessment, detailed reasoning, and alternative classifications.`
+              content: `Classify this product for US import: "${input.query}". Return ${input.limit || 5} HTS codes ranked by accuracy. Include 2025 MFN duty rates, Section 301 considerations if from China, and alternative classifications.`
             }
           ],
           response_format: { type: "json_object" }
