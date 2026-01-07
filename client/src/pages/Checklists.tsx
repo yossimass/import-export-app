@@ -1,5 +1,13 @@
 import Navigation from "@/components/Navigation";
+import WorkflowStepper from "@/components/WorkflowStepper";
 import { useState } from "react";
+
+const WORKFLOW_STEPS = [
+  { id: 1, label: "HTS Code", path: "/hts-search" },
+  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
+  { id: 3, label: "Documents", path: "/documents" },
+  { id: 4, label: "Compliance", path: "/checklists" },
+];
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -43,6 +51,7 @@ export default function Checklists() {
   return (
     <div className="min-h-screen">
       <Navigation />
+      <WorkflowStepper currentStep={4} steps={WORKFLOW_STEPS} />
       <div className="container py-12">
         <div className="mb-8">
           <div className="w-2 h-12 bg-primary mb-4"></div>

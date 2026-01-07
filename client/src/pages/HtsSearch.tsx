@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Navigation from "@/components/Navigation";
+import WorkflowStepper from "@/components/WorkflowStepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
@@ -8,6 +9,13 @@ import { trpc } from "@/lib/trpc";
 import { Search, Info } from "lucide-react";
 import { toast } from "sonner";
 import { useLocation } from "wouter";
+
+const WORKFLOW_STEPS = [
+  { id: 1, label: "HTS Code", path: "/hts-search" },
+  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
+  { id: 3, label: "Documents", path: "/documents" },
+  { id: 4, label: "Compliance", path: "/checklists" },
+];
 
 export default function HtsSearch() {
   const [query, setQuery] = useState("");
@@ -52,6 +60,7 @@ export default function HtsSearch() {
   return (
     <div className="min-h-screen">
       <Navigation />
+      <WorkflowStepper currentStep={1} steps={WORKFLOW_STEPS} />
       <div className="container py-12">
         <div className="mb-8">
           <div className="w-2 h-12 bg-primary mb-4"></div>

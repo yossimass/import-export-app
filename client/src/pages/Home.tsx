@@ -14,12 +14,18 @@ export default function Home() {
         <section className="container py-20">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <div className="w-2 h-16 bg-primary mb-6"></div>
+              <div className="flex items-center gap-4 mb-6">
+                <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-16 h-16" />
+                <div>
+                  <h2 className="text-2xl font-bold">CochitoCorp</h2>
+                  <p className="text-sm text-muted-foreground">International Trade Compliance Platform</p>
+                </div>
+              </div>
               <h1 className="text-5xl font-bold mb-6 leading-tight">
-                International Trade Compliance Platform
+                iTCP: Intelligent Trade Compliance
               </h1>
               <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
-                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance with our comprehensive trade platform.
+                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance—powered by AI and built for global trade professionals.
               </p>
               <Link href="/hts-search">
                 <Button size="lg" className="text-lg px-8">

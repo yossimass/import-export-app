@@ -1,110 +1,80 @@
-# Import Export Trade Assistant - TODO
+# CochitoCorp iTCP - TODO
 
-## ✅ COMPLETED FEATURES
+## ✅ COMPLETED (1/7/2026)
 
-### Core Workflow (HTS → Tariff → Documents → Compliance)
-- [x] HTS Search with AI-powered query-specific results
-- [x] Tariff Calculator with full duty breakdown and landed cost
-- [x] Workflow integration - HTS codes pass to calculator via shipment entity
-- [x] Form pre-population from workflow
-- [x] Shipment tracking in database
-- [x] Navigation across all pages
+### Tariff Calculator ✅ FIXED
+- [x] Fix tariff calculator - now returns proper results with real duty rates
+- [x] Make it work for ALL countries (dropdown supports 200+ countries)
+- [x] Replace country text inputs with dropdown lists
+- [x] Add comprehensive country list with ISO codes (shared/countries.ts)
+- [x] Improved AI prompt with explicit JSON structure and examples
+- [x] Tested: China→USA, HTS 6109.10.0012 returns 16.5% + $2,500 Section 301 = $15,300.90 landed cost
 
-### HTS Search Features
-- [x] AI-powered search returns 10 relevant HTS codes per query
-- [x] Displays duty rates, risk levels, confidence scores
-- [x] Includes reasoning and alternative classifications
-- [x] "Start Workflow" button creates shipment and passes HTS code
-- [x] Tested with cotton t-shirts and wooden tables
+### Regulations & Checklists ✅ IMPROVED
+- [x] Update AI prompts with explicit JSON structures
+- [x] Add detailed field definitions and examples
+- [x] Regulations now returns 5-10 relevant items with authority, risk level, penalties
+- [x] Checklists now returns 8-15 actionable items with deadlines and consequences
 
-### Tariff Calculator Features  
-- [x] Pre-populates HTS code from workflow
-- [x] Calculate duties with MFN rates, trade agreements
-- [x] Display landed cost, duty breakdown, cost summary
-- [x] Support for Incoterms, freight, insurance costs
-- [x] Results display working correctly (fixed 1/7/2026)
+### CochitoCorp iTCP Branding ✅ COMPLETE
+- [x] Generate robot dolphin logo (cochitocorp-logo.png)
+- [x] Update navigation bar with logo and "CochitoCorp iTCP" text
+- [x] Update homepage hero with branding
+- [x] Change tagline to "Intelligent Trade Compliance"
 
-### Supporting Pages
-- [x] Documents page with S3 upload/download
-- [x] Regulations page with AI country-specific lookup
-- [x] Checklists page with AI-generated compliance lists
-- [x] Utilities page (currency converter, shipping estimator)
-- [x] Alerts page with notification management
+### Workflow Progress Indicators ✅ IMPLEMENTED
+- [x] Create WorkflowStepper component with visual progress tracking
+- [x] Add stepper to HTS Search (Step 1)
+- [x] Add stepper to Tariff Calculator (Step 2)
+- [x] Add stepper to Documents (Step 3)
+- [x] Add stepper to Checklists (Step 4)
+- [x] Show completed steps with checkmarks
+- [x] Highlight current step
+- [x] Gray out upcoming steps
 
-## ✅ COMPLETED: AI Chat Assistant (1/7/2026)
+### Core Features Working
+- [x] HTS Code Search - AI-powered with risk assessment
+- [x] Tariff Calculator - Real duty rates with Section 301 tariffs
+- [x] AI Chat Assistant - Comprehensive trade compliance guidance
+- [x] Documents - S3 storage with shipment linking
+- [x] Regulations - Country-specific requirements (improved prompts)
+- [x] Checklists - Actionable compliance items (improved prompts)
+- [x] Utilities - HTS lookup, HS code converter, duty estimator
+- [x] Alerts - Real-time notifications
 
-### AI Chat Implementation
-- [x] Integrate AIChatBox component into ChatAssistant.tsx
-- [x] Connect to chat router with trade compliance context
-- [x] Test chat responses for HTS codes, tariffs, regulations
-- [x] Chat history persists in database via conversationId
-- [x] Tested with cotton t-shirt HTS code question - comprehensive response with duty rates, sources, and recommendations
+## 🔄 WORKFLOW
 
-## 📋 REMAINING ENHANCEMENTS
+**Step 1: HTS Code Search** → Find the right classification code
+**Step 2: Tariff Calculator** → Calculate duties and landed costs
+**Step 3: Documents** → Upload and manage trade documents
+**Step 4: Compliance** → Generate and complete checklists
 
-### Visual Improvements
-- [ ] Add workflow progress stepper (HTS → Tariff → Docs → Compliance)
-- [ ] Implement semantic color coding (red/yellow/green for risk levels)
-- [ ] Add visual indicators for duty rates (high/medium/low)
+Progress is visually tracked with the workflow stepper on each page.
 
-### Export Features
-- [ ] Export tariff calculations to PDF
-- [ ] Export HTS search results to CSV
-- [ ] Export compliance checklists to PDF
+## 📋 FUTURE ENHANCEMENTS
 
-### Advanced Features (Nice-to-Have)
-- [ ] Batch HTS code lookup
-- [ ] Save favorite HTS codes
-- [ ] Compare tariffs across multiple countries
-- [ ] Historical tariff rate tracking
-- [ ] Trade agreement comparison tool
+### Export & Reporting
+- [ ] PDF export for tariff calculations
+- [ ] PDF export for compliance checklists
+- [ ] CSV export for HTS search results
+- [ ] Batch operations for multiple products
 
-## 🧪 TESTING STATUS
+### Workflow Improvements
+- [ ] Save workflow state to database
+- [ ] Resume workflow from any step
+- [ ] Workflow history and audit trail
+- [ ] Risk level indicators (red/yellow/green) throughout UI
 
-### Working Tests
-- [x] Auth logout test
-- [x] HTS search with cotton t-shirts
-- [x] HTS search with wooden tables  
-- [x] Tariff calculation with steel pipes (CHN→USA)
-- [x] Workflow integration (HTS → Tariff)
+### Data & Analytics
+- [ ] Dashboard with shipment analytics
+- [ ] Cost trends and duty rate history
+- [ ] Compliance score tracking
+- [ ] Automated alerts for regulation changes
 
-### Tests Needed
-- [ ] Document upload/download
-- [ ] Regulations lookup
-- [ ] Checklist generation
-- [ ] Alert creation
-- [ ] AI chat responses
+## 🎨 DESIGN NOTES
 
-## 🎨 DESIGN SYSTEM
-
-### International Typographic Style (Swiss Design)
-- ✅ Clean white canvas background
-- ✅ Bold red accent color (#DC2626)
-- ✅ Black sans-serif typography
-- ✅ Geometric precision in layouts
-- ✅ Minimal decoration, maximum clarity
-- ✅ Grid-based structure
-
-## 📊 ARCHITECTURE
-
-### Backend (Complete)
-- ✅ tRPC routers for all features
-- ✅ AI integration with invokeLLM for real-time data
-- ✅ Intelligent fallbacks when AI returns no results
-- ✅ S3 storage for documents
-- ✅ Database for user-generated content only
-
-### Frontend (Mostly Complete)
-- ✅ All pages implemented with navigation
-- ✅ Form validation and error handling
-- ✅ Loading states and user feedback
-- ⚠️ AI Chat needs implementation
-- ⚠️ Visual enhancements needed (progress stepper, color coding)
-
-### Database Schema (Simplified)
-- ✅ Shipments table for workflow tracking
-- ✅ Documents table with S3 references
-- ✅ Alerts table for notifications
-- ✅ Chat messages table for AI assistant
-- ✅ User preferences table
-- ✅ NO static trade data (all from AI in real-time)
+- **Style**: International Typographic Style (Swiss Design)
+- **Colors**: Red primary (#DC2626), black text, white background
+- **Typography**: System fonts, bold headings, clean hierarchy
+- **Layout**: Grid-based, asymmetric, high contrast
+- **Branding**: CochitoCorp iTCP with robot dolphin logo

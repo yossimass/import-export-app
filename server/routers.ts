@@ -247,35 +247,34 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
         shipmentId: z.number().optional(), // Link to workflow
       }))
       .mutation(async ({ input }) => {
-        const prompt = `Calculate comprehensive tariff for:
+        const prompt = `Calculate import duties for:
+
 HTS Code: ${input.htsCode}
 Origin: ${input.originCountry}
 Destination: ${input.destinationCountry}
-Value: $${input.value}
+Merchandise Value: $${input.value}
 ${input.quantity ? `Quantity: ${input.quantity}` : ''}
 ${input.weight ? `Weight: ${input.weight} kg` : ''}
 ${input.incoterm ? `Incoterm: ${input.incoterm}` : ''}
 ${input.freightCost ? `Freight: $${input.freightCost}` : ''}
 ${input.insuranceCost ? `Insurance: $${input.insuranceCost}` : ''}
 
-Provide:
-1. MFN (Most Favored Nation) rate
-2. Preferential rate (if applicable trade agreement exists)
-3. Additional duties (Section 301, antidumping, etc.)
-4. Applied rate (final rate used)
-5. Trade agreement name (USMCA, GSP, etc.)
-6. Exclusion status
-7. Duty amount breakdown
-8. Merchandise Processing Fee (MPF)
-9. Harbor Maintenance Fee (HMF) if applicable
-10. Total duties and fees
-11. Landed cost
-12. Rate source and citation
-13. Detailed rationale for rate determination
-14. Alternative scenarios (different trade agreements, different classifications)
-15. Effective date of rates
+Return JSON with these EXACT fields:
+{
+  "mfnRate": "16.5%",  // MFN duty rate as string with %
+  "preferentialRate": "0%",  // Or null if no trade agreement
+  "additionalDuties": 2500,  // Section 301, AD/CVD as number
+  "appliedRate": "16.5%",  // Final rate used as string
+  "dutyAmount": 1650,  // Calculated duty in USD as number
+  "mpf": 34.64,  // Merchandise Processing Fee (0.3464% of value, min $27.75, max $538.40)
+  "hmf": 0,  // Harbor Maintenance Fee (0.125% if ocean freight)
+  "totalDuties": 4184.64,  // Sum of all duties and fees as number
+  "landedCost": 14784.64,  // Total cost as number
+  "tradeAgreement": "MFN",  // Or "USMCA", "GSP", etc.
+  "explanation": "Detailed 2-3 sentence explanation"
+}
 
-Return as JSON with all fields.`;
+Use CURRENT 2025/2026 rates. For China to USA, include Section 301 tariffs if applicable. Calculate exact amounts.`;
 
         const response = await invokeLLM({
           messages: [
@@ -378,21 +377,30 @@ Return as JSON with all fields.`;
       }))
       .query(async ({ input }) => {
         const prompt = `Find current trade regulations for:
+
 Country: ${input.countryCode}
 Type: ${input.regulationType}
 ${input.htsCode ? `HTS Code: ${input.htsCode}` : ''}
 
-Provide comprehensive regulations including:
-1. Import/export requirements
-2. Licensing requirements
-3. Restrictions and prohibitions
-4. Documentation requirements
-5. Compliance standards (FDA, FCC, CPSC, etc.)
-6. Effective dates
-7. Citation sources
-8. Risk level for each regulation
+Return JSON with this EXACT structure:
+{
+  "regulations": [
+    {
+      "title": "FDA Prior Notice Requirement",
+      "category": "import",  // "import", "export", "licensing", "restriction"
+      "description": "Detailed 2-3 sentence explanation of the requirement",
+      "authority": "FDA",  // Regulatory agency
+      "riskLevel": "high",  // "low", "medium", "high", "critical"
+      "requirements": ["Submit PN 2-15 days before arrival", "Include product details"],
+      "documentation": ["Prior Notice Confirmation", "FDA Registration"],
+      "effectiveDate": "2025-01-01",
+      "source": "21 CFR 1.276",
+      "penalties": "Shipment refusal, detention"
+    }
+  ]
+}
 
-Return as JSON array.`;
+Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/2026 regulations.`;
 
         const response = await invokeLLM({
           messages: [
@@ -488,24 +496,33 @@ Return as JSON array.`;
         htsCode: z.string().optional(),
       }))
       .mutation(async ({ input }) => {
-        const prompt = `Generate comprehensive compliance checklist for:
+        const prompt = `Generate compliance checklist for:
+
 Type: ${input.shipmentType}
 From: ${input.originCountry}
 To: ${input.destinationCountry}
 Product: ${input.productCategory}
 ${input.htsCode ? `HTS: ${input.htsCode}` : ''}
 
-Create detailed checklist with:
-1. Task name
-2. Description
-3. Required/Optional/Conditional
-4. Document type needed
-5. Completion status (false by default)
-6. Risk level if not completed
-7. Regulatory authority
-8. Deadline/timing
+Return JSON with this EXACT structure:
+{
+  "items": [
+    {
+      "task": "Obtain Commercial Invoice",
+      "description": "Detailed 2-sentence explanation of what's needed and why",
+      "priority": "required",  // "required", "optional", "conditional"
+      "category": "documentation",  // "documentation", "compliance", "inspection", "payment"
+      "documentType": "Commercial Invoice",
+      "authority": "CBP",
+      "riskLevel": "high",  // "low", "medium", "high", "critical"
+      "deadline": "Before shipment",
+      "estimatedTime": "1-2 hours",
+      "consequences": "Shipment delays, fines"
+    }
+  ]
+}
 
-Return as JSON with items array.`;
+Provide 8-15 actionable checklist items covering documentation, compliance, inspections, and payments.`;
 
         const response = await invokeLLM({
           messages: [

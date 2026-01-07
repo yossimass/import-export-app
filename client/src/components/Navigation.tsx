@@ -42,8 +42,11 @@ export default function Navigation() {
           {/* Logo */}
           <Link href="/">
             <div className="flex items-center gap-3 cursor-pointer">
-              <div className="w-8 h-8 bg-primary"></div>
-              <span className="text-xl font-bold tracking-tight">TRADE COMPLIANCE</span>
+              <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-10 h-10" />
+              <div className="flex flex-col">
+                <span className="text-sm font-bold tracking-tight leading-none">CochitoCorp</span>
+                <span className="text-xs text-gray-600 leading-none">iTCP</span>
+              </div>
             </div>
           </Link>
 
