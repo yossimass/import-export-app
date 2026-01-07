@@ -11,7 +11,8 @@ import {
   MessageSquare, 
   Settings, 
   Bell,
-  LogOut
+  LogOut,
+  Package
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
@@ -25,6 +26,7 @@ export default function Navigation() {
     { path: "/regulations", label: "Regulations", icon: FileText },
     { path: "/documents", label: "Documents", icon: FolderOpen },
     { path: "/checklists", label: "Checklists", icon: CheckSquare },
+    { path: "/my-shipments", label: "My Shipments", icon: Package },
     { path: "/chat", label: "AI Assistant", icon: MessageSquare },
     { path: "/utilities", label: "Utilities", icon: Settings },
     { path: "/alerts", label: "Alerts", icon: Bell },

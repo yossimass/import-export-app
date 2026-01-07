@@ -111,3 +111,23 @@ Progress is visually tracked with the workflow stepper on each page.
 - [x] Fixed frontend to match backend array format
 - [x] Now displays 9 detailed regulations with risk badges, requirements, documents
 - [x] Tested: United States returns FDA, CBP, OFAC, CITES, etc.
+
+
+## ✅ WORKFLOW PERSISTENCE COMPLETE (1/7/2026)
+
+### My Shipments Page
+- [x] Create "My Shipments" page showing all saved workflows
+- [x] Add navigation link to My Shipments in main menu
+- [x] Display shipment cards with: HTS code, countries, status, progress, date
+- [x] Add "Resume" button on each shipment card
+- [x] Add "Delete" button on each shipment card
+- [x] Tested: Shows 9 shipments in grid layout with all details
+
+### Context Inheritance Working
+- [x] Fix Documents page to accept and load shipmentId from URL
+- [x] Fix Checklists page to accept and load shipmentId from URL
+- [x] Update "Continue" buttons to pass shipmentId in URL
+- [x] Auto-load shipment data when shipmentId is in URL
+- [x] Fixed URL parsing to use window.location.search instead of wouter location
+- [x] Tested complete flow: My Shipments → Resume → Documents → Checklists
+- [x] Verified: HTS code 4201.00.3000, ARG→USA auto-fills on Checklists page

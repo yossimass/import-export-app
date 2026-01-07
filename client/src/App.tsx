@@ -13,6 +13,7 @@ import Checklists from "./pages/Checklists";
 import ChatAssistant from "./pages/ChatAssistant";
 import Utilities from "./pages/Utilities";
 import Alerts from "./pages/Alerts";
+import MyShipments from "./pages/MyShipments";
 
 function Router() {
   return (
@@ -26,6 +27,7 @@ function Router() {
       <Route path={"/chat"} component={ChatAssistant} />
       <Route path={"/utilities"} component={Utilities} />
       <Route path={"/alerts"} component={Alerts} />
+      <Route path={"/my-shipments"} component={MyShipments} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

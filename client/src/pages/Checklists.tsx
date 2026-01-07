@@ -1,6 +1,7 @@
 import Navigation from "@/components/Navigation";
 import WorkflowStepper from "@/components/WorkflowStepper";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 
 const WORKFLOW_STEPS = [
   { id: 1, label: "HTS Code", path: "/hts-search" },
@@ -21,6 +22,28 @@ export default function Checklists() {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [checklist, setChecklist] = useState<any>(null);
+  const [shipmentId, setShipmentId] = useState<number | null>(null);
+  
+  // Extract shipmentId from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const shipmentIdFromUrl = urlParams.get('shipmentId');
+  
+  // Load shipment data if shipmentId is in URL
+  const { data: shipment } = trpc.shipments.get.useQuery(
+    { shipmentId: parseInt(shipmentIdFromUrl || '0') },
+    { enabled: !!shipmentIdFromUrl }
+  );
+  
+  useEffect(() => {
+    if (shipmentIdFromUrl) {
+      setShipmentId(parseInt(shipmentIdFromUrl));
+    }
+    if (shipment) {
+      setHtsCode(shipment.htsCode || '');
+      setOrigin(shipment.originCountry || '');
+      setDestination(shipment.destinationCountry || '');
+    }
+  }, [shipmentIdFromUrl, shipment]);
   
   const generateMutation = trpc.checklists.generate.useMutation({
     onSuccess: (data) => {
@@ -37,9 +60,9 @@ export default function Checklists() {
       toast.error("Please fill in all fields");
       return;
     }
-    // Create a shipment first, then generate checklist
+    // Use shipmentId from URL or create new one
     generateMutation.mutate({
-      shipmentId: 1, // TODO: Get from actual shipment
+      shipmentId: shipmentId || 1,
       shipmentType: "import",
       originCountry: origin,
       destinationCountry: destination,

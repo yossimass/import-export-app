@@ -1,6 +1,7 @@
 import Navigation from "@/components/Navigation";
 import WorkflowStepper from "@/components/WorkflowStepper";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 
 const WORKFLOW_STEPS = [
   { id: 1, label: "HTS Code", path: "/hts-search" },
@@ -27,6 +28,17 @@ export default function Documents() {
   const [uploading, setUploading] = useState(false);
   const [selectedType, setSelectedType] = useState<string>("commercial_invoice");
   const [selectedShipment, setSelectedShipment] = useState<number | null>(null);
+  
+  // Extract shipmentId from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const shipmentIdFromUrl = urlParams.get('shipmentId');
+  
+  // Load shipment context if shipmentId is in URL
+  useEffect(() => {
+    if (shipmentIdFromUrl) {
+      setSelectedShipment(parseInt(shipmentIdFromUrl));
+    }
+  }, [shipmentIdFromUrl]);
 
   const { data: documents, refetch } = trpc.documents.list.useQuery({});
   const { data: shipments } = trpc.shipments.list.useQuery();
@@ -218,6 +230,21 @@ export default function Documents() {
             ))
           )}
         </div>
+
+        {/* Continue to Checklists Button */}
+        {shipmentIdFromUrl && (
+          <div className="mt-8">
+            <Button
+              size="lg"
+              className="w-full"
+              onClick={() => {
+                window.location.href = `/checklists?shipmentId=${shipmentIdFromUrl}`;
+              }}
+            >
+              Continue to Compliance Checklist →
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
