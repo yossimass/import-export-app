@@ -48,9 +48,12 @@ export default function TariffCalculator() {
     }
   }, [shipment]);
 
+  const [result, setResult] = useState<any>(null);
+
   const calculateMutation = trpc.tariff.calculate.useMutation({
     onSuccess: (data) => {
       console.log('[TariffCalculator] Calculation success, data:', data);
+      setResult(data);
       toast.success("Calculation complete!");
     },
     onError: (error) => {
@@ -58,14 +61,29 @@ export default function TariffCalculator() {
       toast.error(error.message);
     },
   });
-
   const handleCalculate = () => {
+    console.log('[TariffCalculator] handleCalculate called');
+    console.log('[TariffCalculator] formData:', formData);
+    
     if (!formData.htsCode || !formData.originCountry || !formData.destinationCountry || !formData.value) {
       toast.error("Please fill in all required fields");
+      console.log('[TariffCalculator] Missing required fields');
       return;
     }
 
-    console.log('[TariffCalculator] Starting calculation with shipmentId:', shipmentId);
+    console.log('[TariffCalculator] Calling mutation with params:', {
+      htsCode: formData.htsCode,
+      originCountry: formData.originCountry,
+      destinationCountry: formData.destinationCountry,
+      value: formData.value,
+      quantity: formData.quantity,
+      weight: formData.weight,
+      incoterm: formData.incoterm,
+      freightCost: formData.freightCost,
+      insuranceCost: formData.insuranceCost,
+      shipmentId: shipmentId,
+    });
+
     calculateMutation.mutate({
       htsCode: formData.htsCode,
       originCountry: formData.originCountry,
@@ -80,7 +98,6 @@ export default function TariffCalculator() {
     });
   };
 
-  const result = calculateMutation.data;
   console.log('[TariffCalculator] Current result:', result, 'isPending:', calculateMutation.isPending);
 
   return (
