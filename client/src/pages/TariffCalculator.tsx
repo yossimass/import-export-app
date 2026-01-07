@@ -59,6 +59,35 @@ export default function TariffCalculator() {
 
   const [result, setResult] = useState<any>(null);
 
+  // Auto-save mutation
+  const updateShipmentMutation = trpc.shipments.update.useMutation();
+
+  // Auto-save form data with debounce
+  useEffect(() => {
+    if (!shipmentId) return;
+    
+    const timer = setTimeout(() => {
+      updateShipmentMutation.mutate({
+        shipmentId,
+        data: {
+          htsCode: formData.htsCode || undefined,
+          originCountry: formData.originCountry || undefined,
+          destinationCountry: formData.destinationCountry || undefined,
+          value: formData.value ? parseFloat(formData.value) : undefined,
+          quantity: formData.quantity ? parseFloat(formData.quantity) : undefined,
+          weight: formData.weight ? parseFloat(formData.weight) : undefined,
+          incoterm: formData.incoterm || undefined,
+          freightCost: formData.freightCost ? parseFloat(formData.freightCost) : undefined,
+          insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
+          workflowStep: 2,
+          status: "calculating",
+        },
+      });
+    }, 1000); // Debounce 1 second
+
+    return () => clearTimeout(timer);
+  }, [formData, shipmentId]);
+
   const calculateMutation = trpc.tariff.calculate.useMutation({
     onSuccess: (data) => {
       console.log('[TariffCalculator] Calculation success, data:', data);
@@ -338,6 +367,35 @@ export default function TariffCalculator() {
                   </div>
                 </Card>
               )}
+
+              {/* Save & Continue Button */}
+              <Button
+                size="lg"
+                className="w-full"
+                onClick={() => {
+                  if (shipmentId) {
+                    updateShipmentMutation.mutate(
+                      {
+                        shipmentId,
+                        data: {
+                          workflowStep: 3,
+                          status: "documenting",
+                          lastCalculation: result,
+                        },
+                      },
+                      {
+                        onSuccess: () => {
+                          window.location.href = `/documents?shipmentId=${shipmentId}`;
+                        },
+                      }
+                    );
+                  } else {
+                    window.location.href = "/documents";
+                  }
+                }}
+              >
+                Save & Continue to Documents →
+              </Button>
             </div>
           )}
 

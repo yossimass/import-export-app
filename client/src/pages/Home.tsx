@@ -44,35 +44,62 @@ export default function Home() {
         {/* Recent Shipments */}
         {recentShipments && recentShipments.length > 0 && (
           <section className="container py-12 border-t-2 border-border">
-            <h2 className="text-2xl font-bold mb-6">Recent Shipments</h2>
+            <h2 className="text-2xl font-bold mb-6">My Workflows</h2>
             <div className="grid md:grid-cols-3 gap-6">
-              {recentShipments.map((shipment) => (
-                <Card key={shipment.id} className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <h3 className="font-bold">{shipment.shipmentName}</h3>
-                    <span className={`px-2 py-1 text-xs font-mono ${
-                      shipment.status === 'complete' ? 'bg-green-100 text-green-800' :
-                      shipment.status === 'reviewing' ? 'bg-yellow-100 text-yellow-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {shipment.status}
-                    </span>
-                  </div>
-                  {shipment.htsCode && (
-                    <p className="text-sm text-muted-foreground mb-2">HTS: {shipment.htsCode}</p>
-                  )}
-                  {shipment.originCountry && shipment.destinationCountry && (
-                    <p className="text-sm text-muted-foreground mb-4">
-                      {shipment.originCountry} → {shipment.destinationCountry}
-                    </p>
-                  )}
-                  <Link href={`/tariff-calculator?shipmentId=${shipment.id}`}>
-                    <Button variant="outline" size="sm" className="w-full">
-                      Continue Workflow →
-                    </Button>
-                  </Link>
-                </Card>
-              ))}
+              {recentShipments.map((shipment) => {
+                const workflowSteps = [
+                  { id: 1, label: "HTS Code", path: "/hts-search" },
+                  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
+                  { id: 3, label: "Documents", path: "/documents" },
+                  { id: 4, label: "Compliance", path: "/checklists" },
+                ];
+                const currentStep = shipment.workflowStep || 1;
+                const nextStepPath = workflowSteps.find(s => s.id === currentStep)?.path || "/hts-search";
+                const progress = (currentStep / 4) * 100;
+                
+                return (
+                  <Card key={shipment.id} className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <h3 className="font-bold">{shipment.shipmentName}</h3>
+                      <span className={`px-2 py-1 text-xs font-mono ${
+                        shipment.status === 'complete' ? 'bg-green-100 text-green-800' :
+                        shipment.status === 'reviewing' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {shipment.status}
+                      </span>
+                    </div>
+                    
+                    {/* Progress Bar */}
+                    <div className="mb-4">
+                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                        <span>Step {currentStep} of 4</span>
+                        <span>{Math.round(progress)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 h-2 rounded-full">
+                        <div 
+                          className="bg-primary h-2 rounded-full transition-all"
+                          style={{ width: `${progress}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    {shipment.htsCode && (
+                      <p className="text-sm text-muted-foreground mb-2">HTS: {shipment.htsCode}</p>
+                    )}
+                    {shipment.originCountry && shipment.destinationCountry && (
+                      <p className="text-sm text-muted-foreground mb-4">
+                        {shipment.originCountry} → {shipment.destinationCountry}
+                      </p>
+                    )}
+                    <Link href={`${nextStepPath}?shipmentId=${shipment.id}`}>
+                      <Button variant="outline" size="sm" className="w-full">
+                        Continue Workflow →
+                      </Button>
+                    </Link>
+                  </Card>
+                );
+              })}
             </div>
           </section>
         )}

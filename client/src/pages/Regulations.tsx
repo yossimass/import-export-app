@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { trpc } from "@/lib/trpc";
-import { Search, Globe, AlertTriangle } from "lucide-react";
+import { Search, Globe, AlertTriangle, FileText, Shield } from "lucide-react";
 import { toast } from "sonner";
 
 export default function Regulations() {
@@ -23,6 +23,16 @@ export default function Regulations() {
       return;
     }
     refetch();
+  };
+
+  const getRiskColor = (risk: string) => {
+    switch (risk) {
+      case "critical": return "bg-red-600 text-white";
+      case "high": return "bg-red-100 text-red-800";
+      case "medium": return "bg-yellow-100 text-yellow-800";
+      case "low": return "bg-green-100 text-green-800";
+      default: return "bg-gray-100 text-gray-800";
+    }
   };
 
   return (
@@ -64,65 +74,83 @@ export default function Regulations() {
           </Button>
         </Card>
 
-        {regulations && (
+        {regulations && regulations.length > 0 && (
           <div className="space-y-6">
-            <Card className="p-6">
-              <div className="flex items-start gap-4 mb-4">
-                <Globe className="w-8 h-8 text-primary flex-shrink-0" />
-                <div>
-                  <h2 className="text-2xl font-bold mb-2">{regulations.country}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Current as of {new Date().toLocaleDateString()}
-                  </p>
-                </div>
+            <div className="flex items-center gap-3 mb-4">
+              <Globe className="w-8 h-8 text-primary" />
+              <div>
+                <h2 className="text-2xl font-bold">{country}</h2>
+                <p className="text-sm text-muted-foreground">
+                  Found {regulations.length} regulations • Current as of {new Date().toLocaleDateString()}
+                </p>
               </div>
+            </div>
 
-              {regulations.importRequirements && (
-                <div className="mb-6">
-                  <h3 className="font-bold text-lg mb-3">Import Requirements</h3>
-                  <div className="space-y-2 pl-4 border-l-2 border-primary">
-                    {regulations.importRequirements.map((req: string, i: number) => (
-                      <p key={i} className="text-sm">{req}</p>
-                    ))}
+            {regulations.map((reg: any, i: number) => (
+              <Card key={i} className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-start gap-3 flex-1">
+                    {reg.category === "import" && <FileText className="w-6 h-6 text-primary flex-shrink-0 mt-1" />}
+                    {reg.category === "export" && <Shield className="w-6 h-6 text-primary flex-shrink-0 mt-1" />}
+                    {reg.category === "restriction" && <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-1" />}
+                    <div className="flex-1">
+                      <h3 className="font-bold text-lg mb-2">{reg.title}</h3>
+                      <p className="text-sm text-muted-foreground mb-3">{reg.description}</p>
+                    </div>
                   </div>
+                  <Badge className={getRiskColor(reg.riskLevel)}>
+                    {reg.riskLevel}
+                  </Badge>
                 </div>
-              )}
 
-              {regulations.prohibitedItems && regulations.prohibitedItems.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
-                    <AlertTriangle className="w-5 h-5 text-red-600" />
-                    Prohibited Items
-                  </h3>
-                  <div className="space-y-2">
-                    {regulations.prohibitedItems.map((item: string, i: number) => (
-                      <Badge key={i} variant="destructive">{item}</Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  {reg.requirements && reg.requirements.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">Requirements:</h4>
+                      <ul className="text-sm space-y-1 pl-4">
+                        {reg.requirements.map((req: string, j: number) => (
+                          <li key={j} className="list-disc">{req}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-              {regulations.certifications && regulations.certifications.length > 0 && (
-                <div className="mb-6">
-                  <h3 className="font-bold text-lg mb-3">Required Certifications</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {regulations.certifications.map((cert: string, i: number) => (
-                      <Card key={i} className="p-3">
-                        <p className="text-sm font-medium">{cert}</p>
-                      </Card>
-                    ))}
-                  </div>
+                  {reg.documentation && reg.documentation.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">Required Documents:</h4>
+                      <ul className="text-sm space-y-1 pl-4">
+                        {reg.documentation.map((doc: string, j: number) => (
+                          <li key={j} className="list-disc">{doc}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {regulations.customsProcedures && (
-                <div>
-                  <h3 className="font-bold text-lg mb-3">Customs Procedures</h3>
-                  <p className="text-sm text-muted-foreground">{regulations.customsProcedures}</p>
+                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-3">
+                  {reg.authority && (
+                    <span><strong>Authority:</strong> {reg.authority}</span>
+                  )}
+                  {reg.source && (
+                    <span><strong>Source:</strong> {reg.source}</span>
+                  )}
+                  {reg.effectiveDate && (
+                    <span><strong>Effective:</strong> {reg.effectiveDate}</span>
+                  )}
+                  {reg.penalties && (
+                    <span className="text-red-600"><strong>Penalties:</strong> {reg.penalties}</span>
+                  )}
                 </div>
-              )}
-            </Card>
+              </Card>
+            ))}
           </div>
+        )}
+
+        {regulations && regulations.length === 0 && (
+          <Card className="p-12 text-center">
+            <Globe className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">No regulations found for this search</p>
+          </Card>
         )}
       </div>
     </div>

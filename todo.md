@@ -78,3 +78,36 @@ Progress is visually tracked with the workflow stepper on each page.
 - **Typography**: System fonts, bold headings, clean hierarchy
 - **Layout**: Grid-based, asymmetric, high contrast
 - **Branding**: CochitoCorp iTCP with robot dolphin logo
+
+
+## 🚨 NEW REQUIREMENT: Workflow Persistence (1/7/2026)
+
+### Workflow Save/Resume Functionality
+- [ ] Update shipments table to store workflow state (current step, form data)
+- [ ] Create workflow save API endpoint
+- [ ] Create workflow load API endpoint
+- [ ] Implement auto-save on HTS Search page
+- [ ] Implement auto-save on Tariff Calculator page
+- [ ] Implement auto-save on Documents page
+- [ ] Implement auto-save on Checklists page
+- [ ] Add "Resume Workflow" buttons on homepage for saved shipments
+- [ ] Show workflow progress percentage on shipment cards
+- [ ] Test: Navigate away and resume from saved state
+- [ ] Test: Multiple workflows can be saved simultaneously
+
+
+## 🚨 CRITICAL ISSUES TO FIX NOW
+
+### Workflow Navigation Broken
+- [ ] Add "Save & Continue to Tariff Calculator" button on HTS Search results
+- [ ] Add "Save & Continue to Documents" button on Tariff Calculator results
+- [ ] Add "Save & Continue to Compliance" button on Documents page
+- [ ] Add "Save & Complete" button on Checklists page
+- [ ] Each button should save current state and navigate to next step
+- [ ] Show visual feedback when saving
+
+### Regulations ✅ FIXED (1/7/2026)
+- [x] Test regulations page - verified it returns actual data
+- [x] Fixed frontend to match backend array format
+- [x] Now displays 9 detailed regulations with risk badges, requirements, documents
+- [x] Tested: United States returns FDA, CBP, OFAC, CITES, etc.
