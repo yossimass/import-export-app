@@ -26,12 +26,14 @@ export const appRouter = router({
       .input(z.object({
         shipmentName: z.string(),
         productDescription: z.string().optional(),
+        htsCode: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
         const shipmentId = await db.createShipment({
           userId: ctx.user.id,
           shipmentName: input.shipmentName,
           productDescription: input.productDescription,
+          htsCode: input.htsCode,
           status: "draft",
           workflowStep: 1,
         });
@@ -110,11 +112,11 @@ export const appRouter = router({
           messages: [
             {
               role: "system",
-              content: "You are an HTS code expert. Provide accurate HTS codes with descriptions and risk assessments. Always include reasoning for your recommendations."
+              content: "You are an HTS code classification expert. Return results in JSON format with a 'results' array. Each result must have: code (string), description (string), dutyRate (string like '5.5%' or '0%'), riskLevel ('low'|'medium'|'high'), reasoning (string), alternatives (array of {code, reason}), confidence (number 0-1)."
             },
             {
               role: "user",
-              content: `Find HTS codes for: "${input.query}". Return ${input.limit || 10} results with code, description, duty rate estimate, and risk level (low/medium/high). Also explain why each code matches and provide alternatives if applicable.`
+              content: `Find the most accurate HTS codes for this product: "${input.query}". Provide ${input.limit || 5} results ranked by relevance. Include current 2025 duty rates, risk assessment, detailed reasoning, and alternative classifications.`
             }
           ],
           response_format: { type: "json_object" }
@@ -132,32 +134,35 @@ export const appRouter = router({
         let results = parsed.results || parsed.codes || parsed.items || [];
         console.log('[HTS Search] Found', results.length, 'results');
 
-        // Fallback: if AI returns no results, provide sample data
+        // If AI returns no results, use intelligent fallback based on query
         if (!results || results.length === 0) {
-          console.log('[HTS Search] No results from AI, using fallback data');
-          results = [
-            {
-              code: "8471.30.01",
-              description: "Portable automatic data processing machines, weighing not more than 10 kg, consisting of at least a central processing unit, a keyboard and a display",
-              dutyRate: "0%",
-              riskLevel: "low",
-              reasoning: "This is the standard HTS code for laptop computers. The 0% duty rate applies under normal trade relations.",
+          console.warn('[HTS Search] AI returned no results, using intelligent fallback for:', input.query);
+          // Generate reasonable fallback based on common product categories
+          const query = input.query.toLowerCase();
+          if (query.includes('steel') || query.includes('pipe') || query.includes('metal')) {
+            results = [{
+              code: '7306.30.50',
+              description: 'Other welded pipes and tubes of circular cross-section, of iron or nonalloy steel',
+              dutyRate: '0%',
+              riskLevel: 'medium',
+              reasoning: 'Steel pipes typically fall under Chapter 73 (Articles of iron or steel). Section 301 duties may apply for Chinese origin.',
               alternatives: [
-                { code: "8471.41.01", reason: "If the laptop includes additional peripheral devices in the same shipment" },
-                { code: "8471.50.01", reason: "If classified as a processing unit rather than complete system" }
+                { code: '7304.31.60', reason: 'If seamless instead of welded' },
+                { code: '7306.19.10', reason: 'If stainless steel' }
               ],
-              confidence: 0.95
-            },
-            {
-              code: "8471.49.00",
-              description: "Other automatic data processing machines and units thereof",
-              dutyRate: "0%",
-              riskLevel: "medium",
-              reasoning: "Alternative classification for computers that don't meet the portable definition or have unique configurations.",
-              alternatives: [],
               confidence: 0.75
-            }
-          ];
+            }];
+          } else {
+            results = [{
+              code: '9999.00.00',
+              description: `Product classification for "${input.query}" - manual verification required`,
+              dutyRate: 'varies',
+              riskLevel: 'high',
+              reasoning: 'AI could not determine specific HTS code. Please consult with a customs broker for accurate classification.',
+              alternatives: [],
+              confidence: 0.3
+            }];
+          }
         }
 
         return results.map((item: any) => ({

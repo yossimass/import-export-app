@@ -1,5 +1,5 @@
 import Navigation from "@/components/Navigation";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +10,14 @@ import { Calculator, Info } from "lucide-react";
 import { toast } from "sonner";
 
 export default function TariffCalculator() {
+  const [searchParams] = useState(() => new URLSearchParams(window.location.search));
+  const shipmentId = searchParams.get('shipmentId') ? parseInt(searchParams.get('shipmentId')!) : undefined;
+  
+  const { data: shipment } = trpc.shipments.get.useQuery(
+    { shipmentId: shipmentId! },
+    { enabled: !!shipmentId }
+  );
+
   const [formData, setFormData] = useState({
     htsCode: "",
     originCountry: "",
@@ -22,9 +30,33 @@ export default function TariffCalculator() {
     insuranceCost: "",
   });
 
+  // Pre-populate form with shipment data
+  useEffect(() => {
+    if (shipment) {
+      setFormData(prev => ({
+        ...prev,
+        htsCode: shipment.htsCode || "",
+        originCountry: shipment.originCountry || "",
+        destinationCountry: shipment.destinationCountry || "",
+        value: shipment.value?.toString() || "",
+        quantity: shipment.quantity?.toString() || "",
+        weight: shipment.weight?.toString() || "",
+        incoterm: shipment.incoterm || "",
+        freightCost: shipment.freightCost?.toString() || "",
+        insuranceCost: shipment.insuranceCost?.toString() || "",
+      }));
+    }
+  }, [shipment]);
+
   const calculateMutation = trpc.tariff.calculate.useMutation({
-    onSuccess: () => toast.success("Calculation complete!"),
-    onError: (error) => toast.error(error.message),
+    onSuccess: (data) => {
+      console.log('[TariffCalculator] Calculation success, data:', data);
+      toast.success("Calculation complete!");
+    },
+    onError: (error) => {
+      console.error('[TariffCalculator] Calculation error:', error);
+      toast.error(error.message);
+    },
   });
 
   const handleCalculate = () => {
@@ -33,6 +65,7 @@ export default function TariffCalculator() {
       return;
     }
 
+    console.log('[TariffCalculator] Starting calculation with shipmentId:', shipmentId);
     calculateMutation.mutate({
       htsCode: formData.htsCode,
       originCountry: formData.originCountry,
@@ -43,10 +76,12 @@ export default function TariffCalculator() {
       incoterm: formData.incoterm || undefined,
       freightCost: formData.freightCost ? parseFloat(formData.freightCost) : undefined,
       insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
+      shipmentId: shipmentId,
     });
   };
 
   const result = calculateMutation.data;
+  console.log('[TariffCalculator] Current result:', result, 'isPending:', calculateMutation.isPending);
 
   return (
     <div className="min-h-screen">

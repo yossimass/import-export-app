@@ -36,6 +36,7 @@ export default function HtsSearch() {
     createShipmentMutation.mutate({
       shipmentName: `Shipment - ${htsCode}`,
       productDescription: description,
+      htsCode: htsCode,
     });
   };
 
