@@ -56,6 +56,21 @@ export const shipments = mysqlTable("shipments", {
     calculatedAt: string;
   }>(),
   
+  // Compliance checklist (cached AI-generated checklist)
+  complianceChecklist: json("complianceChecklist").$type<{
+    items: Array<{
+      task: string;
+      description: string;
+      priority: string;
+      category: string;
+      riskLevel: string;
+      deadline?: string;
+      consequences?: string;
+      completed: boolean;
+    }>;
+    generatedAt: string;
+  }>(),
+  
   // User decisions and overrides
   userOverrides: json("userOverrides").$type<Array<{
     field: string;
@@ -139,3 +154,34 @@ export const chatMessages = mysqlTable("chatMessages", {
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
+
+/**
+ * Checklists - Generated compliance checklists for shipments
+ */
+export const checklists = mysqlTable("checklists", {
+  id: int("id").autoincrement().primaryKey(),
+  shipmentId: int("shipmentId").notNull(),
+  userId: int("userId").notNull(),
+  
+  htsCode: varchar("htsCode", { length: 20 }),
+  originCountry: varchar("originCountry", { length: 3 }),
+  destinationCountry: varchar("destinationCountry", { length: 3 }),
+  
+  // Checklist items stored as JSON array
+  items: json("items").$type<Array<{
+    task: string;
+    description: string;
+    priority: string;
+    category: string;
+    riskLevel: string;
+    deadline?: string;
+    consequences?: string;
+    completed: boolean;
+  }>>().notNull(),
+  
+  generatedAt: timestamp("generatedAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Checklist = typeof checklists.$inferSelect;
+export type InsertChecklist = typeof checklists.$inferInsert;

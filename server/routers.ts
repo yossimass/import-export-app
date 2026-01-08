@@ -547,16 +547,61 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
           completed: false,
         }));
 
-        // Update shipment
+        // Save checklist to shipment
         await db.updateShipment(input.shipmentId, {
           workflowStep: 4,
           status: "reviewing",
+          complianceChecklist: {
+            items,
+            generatedAt: new Date().toISOString(),
+          },
         });
 
         return {
           checklistId: input.shipmentId,
           items,
         };
+      }),
+    
+    get: protectedProcedure
+      .input(z.object({ shipmentId: z.number() }))
+      .query(async ({ input }) => {
+        const shipment = await db.getShipmentById(input.shipmentId);
+        if (!shipment || !shipment.complianceChecklist) {
+          return null;
+        }
+        return {
+          checklistId: shipment.id,
+          items: shipment.complianceChecklist.items,
+          generatedAt: shipment.complianceChecklist.generatedAt,
+        };
+      }),
+    
+    toggleItem: protectedProcedure
+      .input(z.object({
+        shipmentId: z.number(),
+        itemIndex: z.number(),
+        completed: z.boolean(),
+      }))
+      .mutation(async ({ input }) => {
+        const shipment = await db.getShipmentById(input.shipmentId);
+        if (!shipment || !shipment.complianceChecklist) {
+          throw new Error("Checklist not found");
+        }
+        
+        const items = [...shipment.complianceChecklist.items];
+        if (input.itemIndex >= 0 && input.itemIndex < items.length) {
+          items[input.itemIndex].completed = input.completed;
+        }
+        
+        await db.updateShipment(input.shipmentId, {
+          complianceChecklist: {
+            ...shipment.complianceChecklist,
+            items,
+          },
+        });
+        
+        return { success: true, items };
       }),
   }),
 

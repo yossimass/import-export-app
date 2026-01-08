@@ -131,10 +131,13 @@ export function exportChecklistPDF(data: {
   origin: string;
   destination: string;
   items: Array<{
+    task: string;
+    description: string;
+    priority: string;
     category: string;
-    item: string;
-    requirement: string;
     riskLevel: string;
+    deadline?: string;
+    consequences?: string;
     completed?: boolean;
   }>;
 }) {
@@ -154,31 +157,58 @@ export function exportChecklistPDF(data: {
   doc.setFontSize(10);
   doc.text(`HTS Code: ${data.htsCode}`, 14, 42);
   doc.text(`Route: ${data.origin} → ${data.destination}`, 14, 48);
+  doc.text(`Total Items: ${data.items.length}`, 14, 54);
   
-  // Checklist Items
-  autoTable(doc, {
-    startY: 55,
-    head: [["☐", "Category", "Item", "Risk"]],
-    body: data.items.map((item) => [
-      item.completed ? "☑" : "☐",
-      item.category,
-      item.item,
-      item.riskLevel,
-    ]),
-    theme: "striped",
-    headStyles: { fillColor: [220, 20, 60] },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 35 },
-      2: { cellWidth: 110 },
-      3: { cellWidth: 25 },
-    },
+  let currentY = 65;
+  
+  // Checklist Items - Detailed format
+  data.items.forEach((item, index) => {
+    // Check if we need a new page
+    if (currentY > 250) {
+      doc.addPage();
+      currentY = 20;
+    }
+    
+    // Checkbox and Task
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    const checkbox = item.completed ? "☑" : "☐";
+    doc.text(`${checkbox} ${index + 1}. ${item.task}`, 14, currentY);
+    currentY += 6;
+    
+    // Description
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    const descLines = doc.splitTextToSize(item.description, 180);
+    doc.text(descLines, 18, currentY);
+    currentY += descLines.length * 4 + 2;
+    
+    // Metadata row
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    const metadata = [
+      `Priority: ${item.priority}`,
+      `Category: ${item.category}`,
+      `Risk: ${item.riskLevel}`,
+      item.deadline ? `Deadline: ${item.deadline}` : null
+    ].filter(Boolean).join(" | ");
+    doc.text(metadata, 18, currentY);
+    currentY += 4;
+    
+    // Consequences if present
+    if (item.consequences) {
+      doc.setTextColor(220, 20, 60);
+      doc.text(`⚠ ${item.consequences}`, 18, currentY);
+      currentY += 4;
+    }
+    
+    doc.setTextColor(0, 0, 0); // Reset color
+    currentY += 4; // Space between items
   });
   
   // Footer
   doc.setFontSize(8);
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
-  doc.text("Review all items before shipment. Consult with compliance experts for specific requirements.", 14, finalY);
+  doc.text("Review all items before shipment. Consult with compliance experts for specific requirements.", 14, 280);
   
   // Save
   doc.save(`compliance-checklist-${data.htsCode}-${Date.now()}.pdf`);

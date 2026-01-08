@@ -153,3 +153,35 @@ Progress is visually tracked with the workflow stepper on each page.
 - [x] PDF includes: all regulations with descriptions, requirements, documents, risk levels
 - [x] Format as comprehensive regulations summary document
 - [x] Export button added to Regulations page
+
+
+## 🚨 CRITICAL ISSUES REPORTED (1/7/2026)
+
+### Checklist PDF Export Broken
+- [x] Fix checklist PDF export - now shows all items with descriptions, deadlines, consequences
+- [x] Updated exportChecklistPDF to match actual data structure (task, description, priority, etc.)
+- [x] Detailed format with checkboxes, metadata, and risk warnings
+
+### Checklist Persistence Issues
+- [x] Save generated checklists to database - added complianceChecklist JSON field to shipments
+- [x] Store checklist items as JSON in shipments.complianceChecklist
+- [x] Add checklist.get endpoint to load saved checklists
+- [x] Add checklist.toggleItem mutation to save completion state
+- [x] Update shipment workflowStep to 4 when checklist is generated
+- [ ] Update frontend to load saved checklist on page load
+- [ ] Wire up checkbox onChange to call toggleItem mutation
+- [ ] Test: Generate checklist, refresh page, verify it persists
+
+### Missing Export All Functionality
+- [ ] Add "Export All" button to shipment pages
+- [ ] Create combined PDF with: tariff calculation + checklist + regulations
+- [ ] Include shipment summary header with HTS code, countries, date
+- [ ] Format as comprehensive compliance package
+
+### Mobile Responsive Design Broken
+- [ ] Fix navigation menu visibility on mobile devices
+- [ ] Add hamburger menu for mobile navigation
+- [ ] Fix viewport meta tag if missing
+- [ ] Test responsive breakpoints (mobile, tablet, desktop)
+- [ ] Ensure all forms and buttons are accessible on mobile
+- [ ] Fix workflow stepper display on mobile
