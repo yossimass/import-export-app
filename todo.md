@@ -209,3 +209,37 @@ Progress is visually tracked with the workflow stepper on each page.
 - [ ] Test all pages on mobile viewport (375px, 414px) - needs user testing
 - [x] Touch targets sized appropriately (buttons use size="sm" with adequate padding)
 - [x] No horizontal scrolling (decorative elements hidden on mobile)
+
+
+## 🚨 NEW CRITICAL ISSUE (1/7/2026)
+
+### HTS Search Start Workflow Button ✅ FIXED
+- [x] Fix "Start Workflow" button in HTS search results - now working!
+- [x] Added complianceChecklist JSON column to shipments table via SQL
+- [x] Verified createShipment mutation is being called correctly
+- [x] shipmentId is returned and used for navigation (shipmentId=150002)
+- [x] Tested: Search cotton t-shirts → Click Start Workflow → Creates shipment and navigates to tariff calculator with HTS code pre-filled
+
+## 📋 NEW FEATURES TO IMPLEMENT
+
+### Checklist Persistence Frontend
+- [ ] Load saved checklist on page load using shipmentId from URL
+- [ ] Display saved checklist items with completion state
+- [ ] Wire up checkbox onChange to call toggleItem mutation
+- [ ] Show loading state while loading saved checklist
+- [ ] Test: Generate checklist → Refresh page → Verify it persists with checkbox states
+
+### Export All Functionality
+- [ ] Add "Export All" button to My Shipments page
+- [ ] Create comprehensive PDF with: tariff calc + checklist + regulations
+- [ ] Include shipment metadata (HTS, countries, dates)
+- [ ] Format as professional compliance package
+- [ ] Test: Export complete shipment package as single PDF
+
+### Batch HTS Lookup
+- [ ] Add CSV upload button to HTS Search page
+- [ ] Parse CSV with product descriptions
+- [ ] Call HTS search for each product in parallel
+- [ ] Display results in table format
+- [ ] Add "Export Results" button for batch results
+- [ ] Test: Upload CSV with 10 products → Get all HTS codes → Export as CSV
