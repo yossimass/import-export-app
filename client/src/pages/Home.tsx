@@ -11,32 +11,33 @@ export default function Home() {
     <div className="min-h-screen flex flex-col">
       <main className="flex-1">
         {/* Hero Section */}
-        <section className="container py-20">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
+        <section className="container py-8 sm:py-12 md:py-20">
+          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div>
-              <div className="flex items-center gap-4 mb-6">
-                <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-16 h-16" />
+              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
+                <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-12 h-12 sm:w-16 sm:h-16" />
                 <div>
-                  <h2 className="text-2xl font-bold">CochitoCorp</h2>
-                  <p className="text-sm text-muted-foreground">International Trade Compliance Platform</p>
+                  <h2 className="text-lg sm:text-2xl font-bold">CochitoCorp</h2>
+                  <p className="text-xs sm:text-sm text-muted-foreground">International Trade Compliance Platform</p>
                 </div>
               </div>
-              <h1 className="text-5xl font-bold mb-6 leading-tight">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 sm:mb-6 leading-tight">
                 iTCP: Intelligent Trade Compliance
               </h1>
-              <p className="text-xl text-muted-foreground mb-8 leading-relaxed">
+              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground mb-6 sm:mb-8 leading-relaxed">
                 Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance—powered by AI and built for global trade professionals.
               </p>
               <Link href="/hts-search">
-                <Button size="lg" className="text-lg px-8">
+                <Button size="lg" className="text-base sm:text-lg px-6 sm:px-8 w-full sm:w-auto">
                   Start Searching →
                 </Button>
               </Link>
             </div>
             
-            <div className="relative">
-              <div className="absolute top-0 right-0 w-64 h-64 border-4 border-border"></div>
-              <div className="absolute bottom-0 left-12 w-64 h-64 bg-primary"></div>
+            {/* Decorative elements - hidden on mobile to prevent overlap */}
+            <div className="relative hidden lg:block">
+              <div className="absolute top-0 right-0 w-48 h-48 xl:w-64 xl:h-64 border-4 border-border"></div>
+              <div className="absolute bottom-0 left-12 w-48 h-48 xl:w-64 xl:h-64 bg-primary"></div>
             </div>
           </div>
         </section>
@@ -105,10 +106,10 @@ export default function Home() {
         )}
 
         {/* Features Grid */}
-        <section className="container py-16">
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+        <section className="container py-8 sm:py-12 md:py-16">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
             <Link href="/hts-search">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <Search className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">HTS Code Search</h3>
                 <p className="text-muted-foreground">
@@ -118,7 +119,7 @@ export default function Home() {
             </Link>
 
             <Link href="/tariff-calculator">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <Calculator className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">Tariff Calculator</h3>
                 <p className="text-muted-foreground">
@@ -128,7 +129,7 @@ export default function Home() {
             </Link>
 
             <Link href="/regulations">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <FileText className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">Trade Regulations</h3>
                 <p className="text-muted-foreground">
@@ -138,7 +139,7 @@ export default function Home() {
             </Link>
 
             <Link href="/documents">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <FileText className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">Document Management</h3>
                 <p className="text-muted-foreground">
@@ -148,7 +149,7 @@ export default function Home() {
             </Link>
 
             <Link href="/checklists">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <CheckSquare className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">Compliance Checklists</h3>
                 <p className="text-muted-foreground">
@@ -158,7 +159,7 @@ export default function Home() {
             </Link>
 
             <Link href="/chat-assistant">
-              <Card className="p-8 hover:shadow-lg transition-shadow cursor-pointer">
+              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
                 <MessageSquare className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">AI Assistant</h3>
                 <p className="text-muted-foreground">

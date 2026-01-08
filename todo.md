@@ -185,3 +185,27 @@ Progress is visually tracked with the workflow stepper on each page.
 - [ ] Test responsive breakpoints (mobile, tablet, desktop)
 - [ ] Ensure all forms and buttons are accessible on mobile
 - [ ] Fix workflow stepper display on mobile
+
+
+## 🚨 MOBILE RESPONSIVE ISSUES (1/7/2026)
+
+### Navigation Menu Not Visible on Mobile
+- [x] Add hamburger menu icon for mobile screens (Menu/X icons from lucide-react)
+- [x] Create mobile menu drawer/dropdown with full navigation
+- [x] Hide desktop navigation links on small screens (hidden lg:flex)
+- [x] Show hamburger menu on screens < 1024px (lg:hidden)
+- [x] Implemented menu open/close functionality with useState
+
+### Homepage Layout Broken on Mobile
+- [x] Remove overlapping decorative boxes on mobile (hidden lg:block)
+- [x] Fix text wrapping with responsive font sizes (text-3xl sm:text-4xl lg:text-5xl)
+- [x] Reduce size of decorative boxes on desktop (w-48 xl:w-64)
+- [x] Make feature cards stack vertically on mobile (grid sm:grid-cols-2 lg:grid-cols-3)
+- [x] Responsive padding throughout (p-4 sm:p-6 md:p-8, py-8 sm:py-12 md:py-20)
+
+### Viewport and Scaling Issues
+- [x] Viewport meta tag already present (width=device-width, initial-scale=1.0)
+- [x] Container widths are responsive (using Tailwind container class)
+- [ ] Test all pages on mobile viewport (375px, 414px) - needs user testing
+- [x] Touch targets sized appropriately (buttons use size="sm" with adequate padding)
+- [x] No horizontal scrolling (decorative elements hidden on mobile)

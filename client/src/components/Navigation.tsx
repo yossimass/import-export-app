@@ -12,13 +12,17 @@ import {
   Settings, 
   Bell,
   LogOut,
-  Package
+  Package,
+  Menu,
+  X
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { useState } from "react";
 
 export default function Navigation() {
   const [location] = useLocation();
   const { user, isAuthenticated, logout } = useAuth();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navItems = [
     { path: "/hts-search", label: "HTS Search", icon: Search },
@@ -37,22 +41,26 @@ export default function Navigation() {
     window.location.href = "/";
   };
 
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+  };
+
   return (
-    <nav className="border-b border-black bg-white">
+    <nav className="border-b border-black bg-white relative">
       <div className="container">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href="/">
-            <div className="flex items-center gap-3 cursor-pointer">
-              <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-10 h-10" />
+          <Link href="/" onClick={closeMobileMenu}>
+            <div className="flex items-center gap-2 sm:gap-3 cursor-pointer">
+              <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-8 h-8 sm:w-10 sm:h-10" />
               <div className="flex flex-col">
-                <span className="text-sm font-bold tracking-tight leading-none">CochitoCorp</span>
-                <span className="text-xs text-gray-600 leading-none">iTCP</span>
+                <span className="text-xs sm:text-sm font-bold tracking-tight leading-none">CochitoCorp</span>
+                <span className="text-[10px] sm:text-xs text-gray-600 leading-none">iTCP</span>
               </div>
             </div>
           </Link>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           {isAuthenticated && (
             <div className="hidden lg:flex items-center gap-1">
               {navItems.map((item) => {
@@ -74,19 +82,28 @@ export default function Navigation() {
             </div>
           )}
 
-          {/* Auth Section */}
-          <div className="flex items-center gap-3">
+          {/* Auth Section + Mobile Menu Button */}
+          <div className="flex items-center gap-2 sm:gap-3">
             {isAuthenticated ? (
               <>
-                <span className="text-sm font-medium hidden md:block">{user?.name}</span>
+                <span className="text-xs sm:text-sm font-medium hidden md:block">{user?.name}</span>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleLogout}
-                  className="gap-2"
+                  className="gap-2 hidden sm:flex"
                 >
                   <LogOut className="w-4 h-4" />
                   Logout
+                </Button>
+                {/* Mobile Menu Toggle */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                  className="lg:hidden"
+                >
+                  {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </Button>
               </>
             ) : (
@@ -97,6 +114,44 @@ export default function Navigation() {
           </div>
         </div>
       </div>
+
+      {/* Mobile Menu Dropdown */}
+      {isAuthenticated && mobileMenuOpen && (
+        <div className="lg:hidden absolute top-16 left-0 right-0 bg-white border-b border-black shadow-lg z-50">
+          <div className="container py-4 space-y-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location === item.path;
+              return (
+                <Link key={item.path} href={item.path} onClick={closeMobileMenu}>
+                  <Button
+                    variant={isActive ? "default" : "ghost"}
+                    size="sm"
+                    className="w-full justify-start gap-3"
+                  >
+                    <Icon className="w-5 h-5" />
+                    {item.label}
+                  </Button>
+                </Link>
+              );
+            })}
+            <div className="pt-4 border-t border-gray-200">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  handleLogout();
+                  closeMobileMenu();
+                }}
+                className="w-full justify-start gap-3"
+              >
+                <LogOut className="w-5 h-5" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }
