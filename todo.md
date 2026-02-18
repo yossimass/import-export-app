@@ -281,13 +281,20 @@ Progress is visually tracked with the workflow stepper on each page.
 - [ ] Show current credit balance in navigation/header
 - [ ] Add credit purchase history page
 
-### Usage Tracking & Display
-- [ ] Create /account/usage dashboard showing credit consumption
-- [ ] Display credit balance prominently
-- [ ] Show usage breakdown by feature
-- [ ] Add low credit warnings (< 10% remaining)
-- [ ] Show next monthly credit refill date for subscribers
-- [ ] Add credit transaction history
+### Usage Tracking & Display ✅ COMPLETE (1/8/2026)
+- [x] Create /credits dashboard page
+- [x] Add backend endpoint: credits.getBalance (balance + free tier status)
+- [x] Add backend endpoint: credits.getTransactions (paginated history)
+- [x] Add backend endpoint: credits.getUsageStats (usage by feature)
+- [x] Display current credit balance prominently on dashboard
+- [x] Show free tier status (initial searches used, monthly searches remaining)
+- [x] Display transaction history table with pagination
+- [x] Add usage analytics chart (credits spent by feature)
+- [x] Add low credit warnings (< 10% remaining)
+- [x] Show next monthly credit refill date for subscribers (N/A - no active subscriptions yet)
+- [x] Add navigation link to Credits page
+- [x] Add link to purchase credits (placeholder for now)
+- [x] Write and pass unit tests for all endpoints
 
 ### Testing
 - [ ] Test free tier limits (5 initial, 1/month)

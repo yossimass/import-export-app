@@ -710,6 +710,41 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
   }),
 
   // ============================================================================
+  // CREDITS SYSTEM
+  // ============================================================================
+  credits: router({
+    getBalance: protectedProcedure
+      .query(async ({ ctx }) => {
+        const { getCreditBalance, getFreeTierStatus } = await import("./credits");
+        const balance = await getCreditBalance(ctx.user.id);
+        const freeTier = await getFreeTierStatus(ctx.user.id);
+        return {
+          balance,
+          freeTier,
+        };
+      }),
+
+    getTransactions: protectedProcedure
+      .input(z.object({
+        limit: z.number().optional().default(50),
+        offset: z.number().optional().default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        const transactions = await db.getCreditTransactions(ctx.user.id, input.limit, input.offset);
+        return transactions;
+      }),
+
+    getUsageStats: protectedProcedure
+      .input(z.object({
+        days: z.number().optional().default(30),
+      }))
+      .query(async ({ ctx, input }) => {
+        const stats = await db.getCreditUsageStats(ctx.user.id, input.days);
+        return stats;
+      }),
+  }),
+
+  // ============================================================================
   // CHAT ASSISTANT
   // ============================================================================
   chat: router({

@@ -243,3 +243,72 @@ export async function getChatHistory(userId: number, conversationId: string): Pr
     .where(eq(chatMessages.userId, userId))
     .orderBy(chatMessages.createdAt);
 }
+
+// ============================================================================
+// CREDITS & TRANSACTIONS
+// ============================================================================
+
+export async function getCreditTransactions(userId: number, limit: number = 50, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const { creditTransactions } = await import("../drizzle/schema");
+  
+  return await db.select().from(creditTransactions)
+    .where(eq(creditTransactions.userId, userId))
+    .orderBy(desc(creditTransactions.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function getCreditUsageStats(userId: number, days: number = 30) {
+  const db = await getDb();
+  if (!db) return { totalSpent: 0, byFeature: {}, byDay: [] };
+
+  const { creditTransactions } = await import("../drizzle/schema");
+  const { sql } = await import("drizzle-orm");
+  
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+
+  // Get all usage transactions in the time period
+  const transactions = await db.select().from(creditTransactions)
+    .where(
+      sql`${creditTransactions.userId} = ${userId} 
+          AND ${creditTransactions.type} = 'usage' 
+          AND ${creditTransactions.createdAt} >= ${cutoffDate}`
+    )
+    .orderBy(creditTransactions.createdAt);
+
+  // Calculate total spent
+  const totalSpent = transactions.reduce((sum, tx) => {
+    return sum + Math.abs(parseFloat(tx.amount as any) || 0);
+  }, 0);
+
+  // Group by feature
+  const byFeature: Record<string, number> = {};
+  transactions.forEach(tx => {
+    if (tx.featureUsed) {
+      byFeature[tx.featureUsed] = (byFeature[tx.featureUsed] || 0) + Math.abs(parseFloat(tx.amount as any) || 0);
+    }
+  });
+
+  // Group by day
+  const byDay: Array<{ date: string; amount: number }> = [];
+  const dayMap: Record<string, number> = {};
+  
+  transactions.forEach(tx => {
+    const date = new Date(tx.createdAt).toISOString().split('T')[0];
+    dayMap[date] = (dayMap[date] || 0) + Math.abs(parseFloat(tx.amount as any) || 0);
+  });
+
+  Object.entries(dayMap).forEach(([date, amount]) => {
+    byDay.push({ date, amount });
+  });
+
+  return {
+    totalSpent,
+    byFeature,
+    byDay: byDay.sort((a, b) => a.date.localeCompare(b.date)),
+  };
+}

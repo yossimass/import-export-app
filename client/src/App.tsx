@@ -14,6 +14,7 @@ import ChatAssistant from "./pages/ChatAssistant";
 import Utilities from "./pages/Utilities";
 import Alerts from "./pages/Alerts";
 import MyShipments from "./pages/MyShipments";
+import Credits from "./pages/Credits";
 
 function Router() {
   return (
@@ -28,6 +29,7 @@ function Router() {
       <Route path={"/utilities"} component={Utilities} />
       <Route path={"/alerts"} component={Alerts} />
       <Route path={"/my-shipments"} component={MyShipments} />
+      <Route path={"/credits"} component={Credits} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
