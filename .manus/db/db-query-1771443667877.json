@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE subscriptions (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  userId INT NOT NULL,\n  stripeSubscriptionId VARCHAR(255) NOT NULL UNIQUE,\n  stripeCustomerId VARCHAR(255) NOT NULL,\n  stripePriceId VARCHAR(255) NOT NULL,\n  tier VARCHAR(50) NOT NULL,\n  `interval` ENUM('month', 'year') NOT NULL,\n  creditsPerPeriod DECIMAL(15, 4) NOT NULL,\n  status ENUM('active', 'cancelled', 'past_due', 'unpaid') NOT NULL,\n  currentPeriodStart TIMESTAMP,\n  currentPeriodEnd TIMESTAMP,\n  cancelAtPeriodEnd BOOLEAN DEFAULT FALSE,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Q61enYphS8Fhke.root --database i3ZE2S2eATooivdL4BmZxy --execute CREATE TABLE subscriptions (\n  id INT AUTO_INCREMENT PRIMARY KEY,\n  userId INT NOT NULL,\n  stripeSubscriptionId VARCHAR(255) NOT NULL UNIQUE,\n  stripeCustomerId VARCHAR(255) NOT NULL,\n  stripePriceId VARCHAR(255) NOT NULL,\n  tier VARCHAR(50) NOT NULL,\n  `interval` ENUM('month', 'year') NOT NULL,\n  creditsPerPeriod DECIMAL(15, 4) NOT NULL,\n  status ENUM('active', 'cancelled', 'past_due', 'unpaid') NOT NULL,\n  currentPeriodStart TIMESTAMP,\n  currentPeriodEnd TIMESTAMP,\n  cancelAtPeriodEnd BOOLEAN DEFAULT FALSE,\n  createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,\n  updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 535
+}

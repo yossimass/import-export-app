@@ -15,7 +15,7 @@ export default function Home() {
           <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
             <div>
               <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-12 h-12 sm:w-16 sm:h-16" />
+                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/93705925/ChEDaPiGwxAxXWSe.png" alt="CochitoCorp" className="w-12 h-12 sm:w-16 sm:h-16" />
                 <div>
                   <h2 className="text-lg sm:text-2xl font-bold">CochitoCorp</h2>
                   <p className="text-xs sm:text-sm text-muted-foreground">International Trade Compliance Platform</p>

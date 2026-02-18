@@ -243,3 +243,56 @@ Progress is visually tracked with the workflow stepper on each page.
 - [ ] Display results in table format
 - [ ] Add "Export Results" button for batch results
 - [ ] Test: Upload CSV with 10 products → Get all HTS codes → Export as CSV
+
+
+## 💳 CREDITS-BASED PAYMENT SYSTEM (1/8/2026)
+
+### Database Schema ✅ COMPLETE
+- [x] Add credits balance field to users table
+- [x] Create credit_transactions table (user_id, amount, type, description, llm_cost, markup, timestamp)
+- [x] Create subscriptions table (user_id, stripe_subscription_id, tier, status, credits_per_month)
+- [x] Add free tier tracking (initial_searches_used, monthly_searches_used, last_reset_date)
+- [x] Added stripeCustomerId to users table
+- [x] All tables created via SQL
+
+### Stripe Products & Pricing ✅ INFRASTRUCTURE READY
+- [x] Create 6 monthly credit packages: $10, $20, $50, $100, $500, $1000
+- [x] Create 6 annual credit packages (30% discount): $84, $168, $420, $840, $4200, $8400
+- [x] Calculate credit amounts per tier with markup rates (1500% → 300%)
+- [x] Created shared/products.ts with all pricing logic
+- [ ] User needs to claim Stripe sandbox and create products
+- [ ] User needs to add Stripe price IDs to environment variables
+- [ ] Configure webhook handling for subscription events
+
+### Credit Deduction Logic
+- [ ] Track LLM token usage for each feature (HTS search, tariff calc, regulations, checklists, chat)
+- [ ] Calculate actual LLM cost per request
+- [ ] Apply 700% markup to determine credit cost
+- [ ] Deduct credits before executing LLM calls
+- [ ] Handle insufficient credits gracefully (show upgrade prompt)
+- [ ] Free tier: 5 initial searches, then 1/month (no credit deduction)
+
+### Credit Purchase UI
+- [ ] Create /pricing page showing all credit packages
+- [ ] Display credit amounts, pricing, and per-credit cost
+- [ ] Show annual savings (30% discount)
+- [ ] Implement Stripe Checkout for credit purchases
+- [ ] Add subscription management page (/account/subscription)
+- [ ] Show current credit balance in navigation/header
+- [ ] Add credit purchase history page
+
+### Usage Tracking & Display
+- [ ] Create /account/usage dashboard showing credit consumption
+- [ ] Display credit balance prominently
+- [ ] Show usage breakdown by feature
+- [ ] Add low credit warnings (< 10% remaining)
+- [ ] Show next monthly credit refill date for subscribers
+- [ ] Add credit transaction history
+
+### Testing
+- [ ] Test free tier limits (5 initial, 1/month)
+- [ ] Test credit deduction for each feature
+- [ ] Test Stripe checkout with test cards
+- [ ] Test subscription webhooks (created, renewed, cancelled)
+- [ ] Verify credit balance updates correctly
+- [ ] Test insufficient credits handling

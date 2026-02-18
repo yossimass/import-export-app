@@ -10,6 +10,14 @@ export const users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  
+  // Credits system
+  credits: decimal("credits", { precision: 15, scale: 4 }).default("0").notNull(),
+  initialSearchesUsed: int("initialSearchesUsed").default(0).notNull(), // Free tier: 5 initial searches
+  monthlySearchesUsed: int("monthlySearchesUsed").default(0).notNull(), // Free tier: 1 search/month
+  lastMonthlyReset: timestamp("lastMonthlyReset").defaultNow().notNull(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
+  
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -185,3 +193,59 @@ export const checklists = mysqlTable("checklists", {
 
 export type Checklist = typeof checklists.$inferSelect;
 export type InsertChecklist = typeof checklists.$inferInsert;
+
+/**
+ * Credit Transactions - Track all credit additions and deductions
+ */
+export const creditTransactions = mysqlTable("creditTransactions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  amount: decimal("amount", { precision: 15, scale: 4 }).notNull(), // Positive for additions, negative for deductions
+  balanceAfter: decimal("balanceAfter", { precision: 15, scale: 4 }).notNull(),
+  
+  type: mysqlEnum("type", ["purchase", "subscription_refill", "usage", "refund", "admin_adjustment"]).notNull(),
+  description: text("description").notNull(),
+  
+  // LLM usage tracking (for usage transactions)
+  llmCost: decimal("llmCost", { precision: 15, scale: 6 }), // Actual LLM cost in USD
+  markupRate: decimal("markupRate", { precision: 5, scale: 2 }), // e.g., 7.00 for 700%
+  
+  // Related entities
+  featureUsed: varchar("featureUsed", { length: 100 }), // "hts_search", "tariff_calc", etc.
+  shipmentId: int("shipmentId"),
+  stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CreditTransaction = typeof creditTransactions.$inferSelect;
+export type InsertCreditTransaction = typeof creditTransactions.$inferInsert;
+
+/**
+ * Subscriptions - Track recurring credit subscriptions
+ */
+export const subscriptions = mysqlTable("subscriptions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  
+  stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }).notNull().unique(),
+  stripeCustomerId: varchar("stripeCustomerId", { length: 255 }).notNull(),
+  stripePriceId: varchar("stripePriceId", { length: 255 }).notNull(),
+  
+  tier: varchar("tier", { length: 50 }).notNull(), // "$10", "$20", "$50", etc.
+  interval: mysqlEnum("interval", ["month", "year"]).notNull(),
+  creditsPerPeriod: decimal("creditsPerPeriod", { precision: 15, scale: 4 }).notNull(),
+  
+  status: mysqlEnum("status", ["active", "cancelled", "past_due", "unpaid"]).notNull(),
+  
+  currentPeriodStart: timestamp("currentPeriodStart"),
+  currentPeriodEnd: timestamp("currentPeriodEnd"),
+  cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false),
+  
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+export type InsertSubscription = typeof subscriptions.$inferInsert;

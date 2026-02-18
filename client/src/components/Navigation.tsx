@@ -52,7 +52,7 @@ export default function Navigation() {
           {/* Logo */}
           <Link href="/" onClick={closeMobileMenu}>
             <div className="flex items-center gap-2 sm:gap-3 cursor-pointer">
-              <img src="/cochitocorp-logo.png" alt="CochitoCorp" className="w-8 h-8 sm:w-10 sm:h-10" />
+              <img src="https://files.manuscdn.com/user_upload_by_module/session_file/93705925/ChEDaPiGwxAxXWSe.png" alt="CochitoCorp" className="w-8 h-8 sm:w-10 sm:h-10" />
               <div className="flex flex-col">
                 <span className="text-xs sm:text-sm font-bold tracking-tight leading-none">CochitoCorp</span>
                 <span className="text-[10px] sm:text-xs text-gray-600 leading-none">iTCP</span>
