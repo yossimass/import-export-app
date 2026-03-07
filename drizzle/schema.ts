@@ -249,3 +249,72 @@ export const subscriptions = mysqlTable("subscriptions", {
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
+
+/**
+ * Certificates of Origin
+ * Stores generated certificates linked to shipments
+ */
+export const certificates = mysqlTable("certificates", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  shipmentId: int("shipmentId"),
+
+  // Certificate metadata
+  certificateNumber: varchar("certificateNumber", { length: 50 }).notNull(),
+  status: mysqlEnum("status", ["draft", "issued", "revoked"]).default("draft").notNull(),
+
+  // Exporter info
+  exporterName: varchar("exporterName", { length: 255 }).notNull(),
+  exporterAddress: text("exporterAddress"),
+  exporterCountry: varchar("exporterCountry", { length: 3 }),
+  exporterSignatory: varchar("exporterSignatory", { length: 255 }),
+
+  // Consignee info
+  consigneeName: varchar("consigneeName", { length: 255 }).notNull(),
+  consigneeAddress: text("consigneeAddress"),
+  consigneeCountry: varchar("consigneeCountry", { length: 3 }),
+
+  // Goods description
+  htsCode: varchar("htsCode", { length: 20 }),
+  goodsDescription: text("goodsDescription"),
+  quantity: varchar("quantity", { length: 100 }),
+  quantityUnit: varchar("quantityUnit", { length: 50 }),
+  grossWeight: varchar("grossWeight", { length: 100 }),
+  netWeight: varchar("netWeight", { length: 100 }),
+  marksNumbers: text("marksNumbers"),
+  invoiceNumber: varchar("invoiceNumber", { length: 100 }),
+
+  // Origin details
+  countryOfOrigin: varchar("countryOfOrigin", { length: 3 }).notNull(),
+  originCriterion: varchar("originCriterion", { length: 10 }), // A, B, C, D, E, F
+  producerDeclaration: text("producerDeclaration"),
+
+  // Transport details
+  departureDate: varchar("departureDate", { length: 20 }),
+  vessel: varchar("vessel", { length: 255 }),
+  portOfLoading: varchar("portOfLoading", { length: 255 }),
+  portOfDischarge: varchar("portOfDischarge", { length: 255 }),
+  destinationCountry: varchar("destinationCountry", { length: 3 }),
+
+  // Certifying body
+  chamberName: varchar("chamberName", { length: 255 }),
+  issueDate: varchar("issueDate", { length: 20 }),
+  issuePlace: varchar("issuePlace", { length: 255 }),
+
+  // AI validation results
+  validationResult: json("validationResult").$type<{
+    isValid: boolean;
+    warnings: string[];
+    suggestions: string[];
+    originCriterionExplanation: string;
+  }>(),
+
+  // PDF storage
+  pdfUrl: text("pdfUrl"),
+
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Certificate = typeof certificates.$inferSelect;
+export type InsertCertificate = typeof certificates.$inferInsert;

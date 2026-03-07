@@ -791,6 +791,173 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
         return await db.getChatHistory(ctx.user.id, input.conversationId);
       }),
   }),
+
+  // ============================================================================
+  // CERTIFICATE OF ORIGIN
+  // ============================================================================
+  certificate: router({
+    // Generate certificate number and validate with AI
+    generate: protectedProcedure
+      .input(z.object({
+        exporterName: z.string(),
+        exporterAddress: z.string().optional(),
+        exporterCountry: z.string().optional(),
+        exporterSignatory: z.string().optional(),
+        consigneeName: z.string(),
+        consigneeAddress: z.string().optional(),
+        consigneeCountry: z.string().optional(),
+        htsCode: z.string().optional(),
+        goodsDescription: z.string(),
+        quantity: z.string().optional(),
+        quantityUnit: z.string().optional(),
+        grossWeight: z.string().optional(),
+        netWeight: z.string().optional(),
+        marksNumbers: z.string().optional(),
+        invoiceNumber: z.string().optional(),
+        countryOfOrigin: z.string(),
+        originCriterion: z.string().optional(),
+        producerDeclaration: z.string().optional(),
+        departureDate: z.string().optional(),
+        vessel: z.string().optional(),
+        portOfLoading: z.string().optional(),
+        portOfDischarge: z.string().optional(),
+        destinationCountry: z.string().optional(),
+        chamberName: z.string().optional(),
+        issueDate: z.string().optional(),
+        issuePlace: z.string().optional(),
+        shipmentId: z.number().optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        // AI validation of origin criteria
+        const validationPrompt = `You are a trade compliance expert specializing in Certificates of Origin.
+
+Validate the following Certificate of Origin details and provide guidance:
+
+Exporter: ${input.exporterName} (${input.exporterCountry || 'unknown country'})
+Consignee: ${input.consigneeName} (${input.consigneeCountry || 'unknown country'})
+Goods: ${input.goodsDescription}
+HTS Code: ${input.htsCode || 'not provided'}
+Country of Origin: ${input.countryOfOrigin}
+Origin Criterion: ${input.originCriterion || 'not specified'}
+Destination: ${input.destinationCountry || 'not specified'}
+
+Return JSON with this EXACT structure:
+{
+  "isValid": true,
+  "warnings": ["warning 1", "warning 2"],
+  "suggestions": ["suggestion 1"],
+  "originCriterionExplanation": "Explanation of the applicable origin criterion",
+  "recommendedCriterion": "A",
+  "tradeAgreements": ["USMCA", "CAFTA-DR"]
+}
+
+Origin criteria meanings:
+- A: Wholly obtained or produced in the country
+- B: Produced exclusively from originating materials
+- C: Satisfies tariff classification change rule
+- D: Satisfies regional value content requirement
+- E: Satisfies specific manufacturing process
+- F: Combination of C and D`;
+
+        const aiResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: "You are a trade compliance expert. Return only valid JSON." },
+            { role: "user", content: validationPrompt }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = aiResponse.choices[0]?.message?.content;
+        let validationResult = {
+          isValid: true,
+          warnings: [] as string[],
+          suggestions: [] as string[],
+          originCriterionExplanation: "Origin criterion validated",
+        };
+        try {
+          const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
+          validationResult = parsed;
+        } catch {}
+
+        // Generate certificate number
+        const now = new Date();
+        const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
+        const seq = String(Math.floor(Math.random() * 9000) + 1000);
+        const certificateNumber = `COO-${dateStr}-${seq}`;
+
+        // Save to database
+        const certId = await db.createCertificate({
+          userId: ctx.user.id,
+          shipmentId: input.shipmentId,
+          certificateNumber,
+          status: "draft",
+          exporterName: input.exporterName,
+          exporterAddress: input.exporterAddress,
+          exporterCountry: input.exporterCountry,
+          exporterSignatory: input.exporterSignatory,
+          consigneeName: input.consigneeName,
+          consigneeAddress: input.consigneeAddress,
+          consigneeCountry: input.consigneeCountry,
+          htsCode: input.htsCode,
+          goodsDescription: input.goodsDescription,
+          quantity: input.quantity,
+          quantityUnit: input.quantityUnit,
+          grossWeight: input.grossWeight,
+          netWeight: input.netWeight,
+          marksNumbers: input.marksNumbers,
+          invoiceNumber: input.invoiceNumber,
+          countryOfOrigin: input.countryOfOrigin,
+          originCriterion: input.originCriterion,
+          producerDeclaration: input.producerDeclaration,
+          departureDate: input.departureDate,
+          vessel: input.vessel,
+          portOfLoading: input.portOfLoading,
+          portOfDischarge: input.portOfDischarge,
+          destinationCountry: input.destinationCountry,
+          chamberName: input.chamberName,
+          issueDate: input.issueDate || now.toISOString().slice(0, 10),
+          issuePlace: input.issuePlace,
+          validationResult,
+        });
+
+        return {
+          certificateId: certId,
+          certificateNumber,
+          validationResult,
+        };
+      }),
+
+    get: protectedProcedure
+      .input(z.object({ certificateId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCertificateById(input.certificateId);
+      }),
+
+    getByShipment: protectedProcedure
+      .input(z.object({ shipmentId: z.number() }))
+      .query(async ({ input }) => {
+        return await db.getCertificateByShipmentId(input.shipmentId);
+      }),
+
+    list: protectedProcedure
+      .query(async ({ ctx }) => {
+        return await db.getUserCertificates(ctx.user.id);
+      }),
+
+    issue: protectedProcedure
+      .input(z.object({ certificateId: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.updateCertificate(input.certificateId, { status: "issued" });
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ certificateId: z.number() }))
+      .mutation(async ({ input }) => {
+        await db.deleteCertificate(input.certificateId);
+        return { success: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

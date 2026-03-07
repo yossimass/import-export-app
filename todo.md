@@ -303,3 +303,112 @@ Progress is visually tracked with the workflow stepper on each page.
 - [ ] Test subscription webhooks (created, renewed, cancelled)
 - [ ] Verify credit balance updates correctly
 - [ ] Test insufficient credits handling
+
+## 📜 CERTIFICATE OF ORIGIN GENERATOR (Mar 2026)
+
+### Backend
+- [ ] Create certificate.generate tRPC endpoint (AI-validates fields, returns structured data)
+- [ ] Create certificate.save mutation (persist to DB linked to shipmentId)
+- [ ] Create certificate.get query (load saved certificate by shipmentId)
+- [ ] Create certificate.exportPDF mutation (server-side PDF generation via jsPDF/pdfkit)
+- [ ] Add certificateData JSON column to shipments table (or separate certificates table)
+
+### Frontend - Form
+- [ ] Create /certificate-of-origin page
+- [ ] Exporter section: company name, address, country, authorized signature
+- [ ] Consignee section: company name, address, country
+- [ ] Goods section: HTS code, description, quantity, unit, gross weight, net weight, marks/numbers
+- [ ] Origin declaration: country of origin, criterion (A/B/C/D/E/F), producer declaration
+- [ ] Transport section: departure date, vessel/flight, port of loading, port of discharge
+- [ ] Certifying body: chamber of commerce name, certificate number, issue date
+- [ ] Auto-fill from shipment context (shipmentId in URL)
+
+### Frontend - Preview & Export
+- [ ] Live preview panel showing certificate layout as user fills form
+- [ ] "Generate Certificate" button triggers AI validation
+- [ ] AI validates origin criteria and flags potential issues
+- [ ] Download PDF button (professional A4 layout)
+- [ ] Save to shipment workflow button
+- [ ] Certificate number auto-generation (COO-YYYYMMDD-XXXX)
+
+### Integration
+- [ ] Add Certificate of Origin link to navigation
+- [ ] Add "Generate Certificate" button in workflow step 4 (Compliance)
+- [ ] Pass shipmentId context through to pre-fill form
+- [ ] Show saved certificate status in My Shipments page
+
+### Testing
+- [ ] Write vitest for certificate.generate endpoint
+- [ ] Test PDF export produces valid output
+- [ ] Test auto-fill from shipment context
+
+## 📜 CERTIFICATE OF ORIGIN GENERATOR (Mar 2026)
+
+### Backend
+- [ ] Add certificates table to drizzle schema
+- [ ] Create certificate.generate tRPC endpoint (AI validates origin criteria)
+- [ ] Create certificate.save mutation (persist to DB linked to shipmentId)
+- [ ] Create certificate.get query (load saved certificate by shipmentId/id)
+- [ ] Create certificate.list query (list user certificates)
+- [ ] Create certificate.delete mutation
+- [ ] Create certificate.exportPDF mutation (server-side PDF generation)
+
+### Frontend - Form
+- [ ] Create /certificate-of-origin page
+- [ ] Exporter section: company name, address, country, authorized signature
+- [ ] Consignee section: company name, address, country
+- [ ] Goods section: HTS code, description, quantity, unit, gross/net weight, marks
+- [ ] Origin declaration: country of origin, criterion (A/B/C/D/E/F), producer declaration
+- [ ] Transport section: departure date, vessel/flight, port of loading/discharge
+- [ ] Certifying body: chamber name, certificate number, issue date
+- [ ] Auto-fill from shipment context (shipmentId in URL)
+
+### Frontend - Preview & Export
+- [ ] Live preview panel showing certificate layout as user fills form
+- [ ] AI validation of origin criteria with warnings
+- [ ] Download PDF button (professional A4 layout)
+- [ ] Certificate number auto-generation (COO-YYYYMMDD-XXXX)
+- [ ] Save to shipment button
+
+### Integration
+- [ ] Add Certificate of Origin link to navigation
+- [ ] Add "Generate Certificate" shortcut in workflow / compliance page
+- [ ] Show saved certificate status in My Shipments page
+
+### Testing
+- [ ] Write vitest for certificate.generate endpoint
+- [ ] Test PDF export produces valid output
+- [ ] Test auto-fill from shipment context
+
+
+## 📜 CERTIFICATE OF ORIGIN GENERATOR ✅ COMPLETE (3/7/2026)
+
+### Backend
+- [x] Add certificates table to drizzle schema (certificateNumber, status, exporter, consignee, goods, origin, transport, etc.)
+- [x] Create DB helpers: createCertificate, getCertificateById, listCertificates, updateCertificate, deleteCertificate
+- [x] Add certificate tRPC router with: generate, get, list, issue, delete procedures
+- [x] AI validation in generate: validates origin criterion, returns warnings, suggestions, trade agreements
+- [x] Certificate number format: COO-YYYYMMDD-XXXX
+
+### Frontend
+- [x] Create /certificate-of-origin page with 6-section form
+- [x] Section 1: Exporter / Seller (name, address, country, signatory)
+- [x] Section 2: Consignee / Buyer (name, address, country)
+- [x] Section 3: Description of Goods (description, HTS code, invoice, quantity, weight, marks)
+- [x] Section 4: Origin Declaration (country of origin, criterion A-F, producer declaration)
+- [x] Section 5: Transport Details (departure date, vessel, ports, destination)
+- [x] Section 6: Certifying Body (chamber name, issue date, place)
+- [x] Certificate preview panel (official-looking formatted certificate)
+- [x] AI validation results panel (valid/invalid badge, warnings, suggestions, trade agreements)
+- [x] PDF download via jsPDF (client-side generation)
+- [x] Print support
+- [x] Auto-fill from shipment when shipmentId is in URL
+- [x] countries.ts utility with 130+ countries
+
+### Navigation & Routing
+- [x] Add /certificate-of-origin route to App.tsx
+- [x] Add "Certificate of Origin" link with Stamp icon to Navigation
+
+### Tests
+- [x] 7 vitest tests all passing (with 30s timeout for LLM calls)
+- [x] Tests cover: list, generate, get, issue, list after generate, delete, validation result shape

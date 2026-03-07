@@ -1,6 +1,6 @@
 import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, shipments, documents, alerts, chatMessages, InsertShipment, Shipment, InsertDocument, Document } from "../drizzle/schema";
+import { InsertUser, users, shipments, documents, alerts, chatMessages, InsertShipment, Shipment, InsertDocument, Document, certificates, InsertCertificate, Certificate } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -311,4 +311,52 @@ export async function getCreditUsageStats(userId: number, days: number = 30) {
     byFeature,
     byDay: byDay.sort((a, b) => a.date.localeCompare(b.date)),
   };
+}
+
+// ============================================================================
+// CERTIFICATES OF ORIGIN
+// ============================================================================
+
+export async function createCertificate(data: InsertCertificate): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(certificates).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function getCertificateById(id: number): Promise<Certificate | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(certificates).where(eq(certificates.id, id)).limit(1);
+  return result[0];
+}
+
+export async function getCertificateByShipmentId(shipmentId: number): Promise<Certificate | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(certificates)
+    .where(eq(certificates.shipmentId, shipmentId))
+    .orderBy(desc(certificates.createdAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function getUserCertificates(userId: number): Promise<Certificate[]> {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(certificates)
+    .where(eq(certificates.userId, userId))
+    .orderBy(desc(certificates.createdAt));
+}
+
+export async function updateCertificate(id: number, data: Partial<InsertCertificate>): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(certificates).set(data as any).where(eq(certificates.id, id));
+}
+
+export async function deleteCertificate(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(certificates).where(eq(certificates.id, id));
 }

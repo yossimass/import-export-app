@@ -15,7 +15,8 @@ import {
   Package,
   Menu,
   X,
-  Wallet
+  Wallet,
+  Stamp
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useState } from "react";
@@ -33,6 +34,7 @@ export default function Navigation() {
     { path: "/checklists", label: "Checklists", icon: CheckSquare },
     { path: "/my-shipments", label: "My Shipments", icon: Package },
     { path: "/chat", label: "AI Assistant", icon: MessageSquare },
+    { path: "/certificate-of-origin", label: "Certificate of Origin", icon: Stamp },
     { path: "/credits", label: "Credits", icon: Wallet },
     { path: "/utilities", label: "Utilities", icon: Settings },
     { path: "/alerts", label: "Alerts", icon: Bell },
