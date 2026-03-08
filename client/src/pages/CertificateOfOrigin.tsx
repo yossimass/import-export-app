@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -7,35 +7,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import Navigation from "@/components/Navigation";
 import {
-  FileText,
-  Download,
-  CheckCircle,
-  AlertTriangle,
-  Info,
-  Loader2,
-  Save,
-  Printer,
-  Shield,
+  FileText, Download, CheckCircle, AlertTriangle, Info,
+  Loader2, Save, Printer, Shield, Sparkles, ChevronRight,
+  BookOpen, RefreshCw, HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { COUNTRIES, type Country } from "@/lib/countries";
+import { TRADE_AGREEMENTS, type TradeAgreement, type TradeAgreementField } from "../../../shared/tradeAgreements";
 
-// Origin criteria definitions
-const ORIGIN_CRITERIA = [
-  { value: "A", label: "A – Wholly obtained or produced in the country" },
-  { value: "B", label: "B – Produced exclusively from originating materials" },
-  { value: "C", label: "C – Satisfies tariff classification change rule" },
-  { value: "D", label: "D – Satisfies regional value content requirement" },
-  { value: "E", label: "E – Satisfies specific manufacturing process" },
-  { value: "F", label: "F – Combination of C and D criteria" },
-];
-
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface CertFormData {
+  tradeAgreement: string;
   exporterName: string;
   exporterAddress: string;
   exporterCountry: string;
@@ -62,9 +50,11 @@ interface CertFormData {
   chamberName: string;
   issueDate: string;
   issuePlace: string;
+  agreementFields: Record<string, string>;
 }
 
 const EMPTY_FORM: CertFormData = {
+  tradeAgreement: "GENERIC",
   exporterName: "",
   exporterAddress: "",
   exporterCountry: "",
@@ -91,8 +81,116 @@ const EMPTY_FORM: CertFormData = {
   chamberName: "",
   issueDate: new Date().toISOString().slice(0, 10),
   issuePlace: "",
+  agreementFields: {},
 };
 
+// ─── Agreement selector card ──────────────────────────────────────────────────
+function AgreementCard({
+  agreement,
+  selected,
+  onClick,
+}: {
+  agreement: TradeAgreement;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left p-4 rounded-lg border-2 transition-all w-full ${
+        selected
+          ? "border-primary bg-primary/5 shadow-sm"
+          : "border-border hover:border-primary/50 hover:bg-muted/30"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="font-bold text-sm">{agreement.shortName}</p>
+          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{agreement.description}</p>
+        </div>
+        {selected && <CheckCircle className="w-4 h-4 text-primary shrink-0 mt-0.5" />}
+      </div>
+    </button>
+  );
+}
+
+// ─── Dynamic field renderer ───────────────────────────────────────────────────
+function DynamicField({
+  field,
+  value,
+  onChange,
+}: {
+  field: TradeAgreementField;
+  value: string;
+  onChange: (val: string) => void;
+}) {
+  return (
+    <div>
+      <Label htmlFor={field.key} className="flex items-center gap-1">
+        {field.label}
+        {field.required && <span className="text-red-500">*</span>}
+        {field.helpText && (
+          <span title={field.helpText} className="cursor-help">
+            <HelpCircle className="w-3 h-3 text-muted-foreground" />
+          </span>
+        )}
+      </Label>
+      {field.helpText && (
+        <p className="text-xs text-muted-foreground mb-1">{field.helpText}</p>
+      )}
+      {field.type === "textarea" && (
+        <Textarea
+          id={field.key}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={field.placeholder}
+          rows={3}
+        />
+      )}
+      {field.type === "text" && (
+        <Input
+          id={field.key}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={field.placeholder}
+        />
+      )}
+      {field.type === "date" && (
+        <Input
+          id={field.key}
+          type="date"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+        />
+      )}
+      {field.type === "select" && field.options && (
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger><SelectValue placeholder="Select…" /></SelectTrigger>
+          <SelectContent>
+            {field.options.map(opt => (
+              <SelectItem key={opt.value} value={opt.value || "__none__"}>{opt.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {field.type === "checkbox" && (
+        <div className="flex items-center gap-2 mt-1">
+          <Checkbox
+            id={field.key}
+            checked={value === "true"}
+            onCheckedChange={checked => onChange(checked ? "true" : "false")}
+          />
+          <label htmlFor={field.key} className="text-sm cursor-pointer">
+            {field.placeholder || "Yes"}
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function CertificateOfOrigin() {
   const { isAuthenticated } = useAuth();
   const [form, setForm] = useState<CertFormData>(EMPTY_FORM);
@@ -100,15 +198,30 @@ export default function CertificateOfOrigin() {
     certificateId: number;
     certificateNumber: string;
     validationResult: any;
+    agreement: any;
   } | null>(null);
-  const [showPreview, setShowPreview] = useState(false);
   const [activeSection, setActiveSection] = useState<"form" | "preview">("form");
+  const [aiQuery, setAiQuery] = useState("");
+  const [aiResult, setAiResult] = useState<any>(null);
+  const [showAiPanel, setShowAiPanel] = useState(false);
 
   // Read shipmentId from URL
   const params = new URLSearchParams(window.location.search);
   const shipmentId = params.get("shipmentId") ? Number(params.get("shipmentId")) : undefined;
 
-  // Auto-fill from shipment if shipmentId is present
+  // Get selected agreement definition
+  const selectedAgreement = useMemo(
+    () => TRADE_AGREEMENTS.find(a => a.id === form.tradeAgreement) || TRADE_AGREEMENTS.find(a => a.id === "GENERIC")!,
+    [form.tradeAgreement]
+  );
+
+  // Auto-detect applicable agreements when countries change
+  const { data: applicableAgreements } = trpc.certificate.getApplicableAgreements.useQuery(
+    { exporterCountry: form.exporterCountry, destinationCountry: form.destinationCountry },
+    { enabled: !!(form.exporterCountry && form.destinationCountry) }
+  );
+
+  // Auto-fill from shipment
   const { data: shipment } = trpc.shipments.get.useQuery(
     { shipmentId: shipmentId! },
     { enabled: !!shipmentId }
@@ -126,48 +239,76 @@ export default function CertificateOfOrigin() {
     }
   }, [shipment]);
 
+  // When agreement changes, reset origin criterion
+  useEffect(() => {
+    setForm(prev => ({ ...prev, originCriterion: "", agreementFields: {} }));
+  }, [form.tradeAgreement]);
+
   const generateMutation = trpc.certificate.generate.useMutation({
     onSuccess: (data) => {
       setGeneratedCert(data);
-      setShowPreview(true);
       setActiveSection("preview");
-      toast.success(`Certificate ${data.certificateNumber} generated successfully`);
+      toast.success(`Certificate ${data.certificateNumber} generated`);
     },
-    onError: (err) => {
-      toast.error(`Failed to generate certificate: ${err.message}`);
-    },
+    onError: (err) => toast.error(`Failed to generate: ${err.message}`),
   });
 
   const issueMutation = trpc.certificate.issue.useMutation({
-    onSuccess: () => {
-      toast.success("Certificate issued successfully");
+    onSuccess: () => toast.success("Certificate issued"),
+  });
+
+  const aiAssistMutation = trpc.certificate.aiAssist.useMutation({
+    onSuccess: (data) => {
+      setAiResult(data);
+      // Auto-apply recommended criterion
+      if (data.recommendedCriterion) {
+        setForm(prev => ({ ...prev, originCriterion: data.recommendedCriterion }));
+      }
+      // Auto-apply producer declaration
+      if (data.producerDeclaration) {
+        setForm(prev => ({ ...prev, producerDeclaration: data.producerDeclaration }));
+      }
+      toast.success("AI analysis complete — fields updated");
     },
+    onError: (err) => toast.error(`AI assist failed: ${err.message}`),
   });
 
   const handleGenerate = () => {
     if (!form.exporterName || !form.consigneeName || !form.goodsDescription || !form.countryOfOrigin) {
-      toast.error("Please fill in all required fields: Exporter, Consignee, Goods Description, and Country of Origin");
+      toast.error("Please fill in: Exporter, Consignee, Goods Description, and Country of Origin");
       return;
     }
-    generateMutation.mutate({ ...form, shipmentId });
+    generateMutation.mutate({
+      ...form,
+      shipmentId,
+      agreementFields: form.agreementFields,
+    });
   };
 
-  const handleDownloadPDF = () => {
-    if (!generatedCert) return;
-    generatePDF(form, generatedCert.certificateNumber);
-  };
-
-  const handlePrint = () => {
-    window.print();
+  const handleAiAssist = () => {
+    aiAssistMutation.mutate({
+      tradeAgreement: form.tradeAgreement,
+      exporterCountry: form.exporterCountry,
+      destinationCountry: form.destinationCountry,
+      goodsDescription: form.goodsDescription,
+      htsCode: form.htsCode,
+      userQuery: aiQuery || undefined,
+    });
   };
 
   const update = (field: keyof CertFormData, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const getCountryName = (code: string) => {
-    return COUNTRIES.find(c => c.code === code)?.name || code;
+  const updateAgreementField = (key: string, value: string) => {
+    setForm(prev => ({
+      ...prev,
+      agreementFields: { ...prev.agreementFields, [key]: value },
+    }));
   };
+
+  const getCountryName = (code: string) =>
+    COUNTRIES.find((c: Country) => c.code === code)?.name || code;
 
   if (!isAuthenticated) {
     return (
@@ -187,6 +328,7 @@ export default function CertificateOfOrigin() {
     <div className="min-h-screen bg-background">
       <Navigation />
       <main className="container py-8">
+
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
@@ -195,15 +337,15 @@ export default function CertificateOfOrigin() {
               <h1 className="text-3xl sm:text-4xl font-bold">Certificate of Origin</h1>
             </div>
             <p className="text-muted-foreground">
-              Generate official certificates of origin with AI-powered validation
+              Generate trade-agreement-specific COOs with AI-powered compliance validation
             </p>
           </div>
           {generatedCert && (
             <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" onClick={handlePrint} className="gap-2">
+              <Button variant="outline" onClick={() => window.print()} className="gap-2">
                 <Printer className="w-4 h-4" /> Print
               </Button>
-              <Button onClick={handleDownloadPDF} className="gap-2">
+              <Button onClick={() => generatePDF(form, generatedCert.certificateNumber, selectedAgreement)} className="gap-2">
                 <Download className="w-4 h-4" /> Download PDF
               </Button>
             </div>
@@ -211,36 +353,201 @@ export default function CertificateOfOrigin() {
         </div>
 
         {/* Tab switcher */}
-        {showPreview && (
+        {generatedCert && (
           <div className="flex gap-2 mb-6 border-b border-border">
-            <button
-              onClick={() => setActiveSection("form")}
-              className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-                activeSection === "form"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Edit Form
-            </button>
-            <button
-              onClick={() => setActiveSection("preview")}
-              className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
-                activeSection === "preview"
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              Certificate Preview
-            </button>
+            {(["form", "preview"] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setActiveSection(tab)}
+                className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors capitalize ${
+                  activeSection === tab
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {tab === "form" ? "Edit Form" : "Certificate Preview"}
+              </button>
+            ))}
           </div>
         )}
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Form */}
-          <div className={`lg:col-span-2 space-y-6 ${activeSection === "preview" && showPreview ? "hidden lg:block" : ""}`}>
 
-            {/* 1. Exporter */}
+          {/* ── LEFT: Form ─────────────────────────────────────────────────── */}
+          <div className={`lg:col-span-2 space-y-6 ${activeSection === "preview" && generatedCert ? "hidden lg:block" : ""}`}>
+
+            {/* STEP 0: Trade Agreement Selector */}
+            <Card className="border-2 border-primary/30 bg-primary/5">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-primary" />
+                  Trade Agreement / Certificate Format
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Select the applicable trade agreement. The form will adapt to show the required fields for that format.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {TRADE_AGREEMENTS.map(agreement => (
+                    <AgreementCard
+                      key={agreement.id}
+                      agreement={agreement}
+                      selected={form.tradeAgreement === agreement.id}
+                      onClick={() => update("tradeAgreement", agreement.id)}
+                    />
+                  ))}
+                </div>
+
+                {/* Auto-detected agreements hint */}
+                {applicableAgreements && applicableAgreements.length > 0 && (
+                  <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200 flex gap-2">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div className="text-sm text-blue-800">
+                      <strong>Detected applicable agreements</strong> for {getCountryName(form.exporterCountry)} → {getCountryName(form.destinationCountry)}:{" "}
+                      {applicableAgreements.map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => update("tradeAgreement", a.id)}
+                          className="underline font-medium mx-1 hover:text-blue-600"
+                        >
+                          {a.shortName}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected agreement info */}
+                {selectedAgreement && (
+                  <div className="mt-4 p-3 bg-muted/50 rounded-lg">
+                    <p className="text-sm font-semibold">{selectedAgreement.name}</p>
+                    {selectedAgreement.officialFormName && (
+                      <p className="text-xs text-muted-foreground">Official form: {selectedAgreement.officialFormName}</p>
+                    )}
+                    {selectedAgreement.notes.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {selectedAgreement.notes.slice(0, 2).map((note, i) => (
+                          <li key={i} className="text-xs text-muted-foreground flex gap-1">
+                            <span className="text-primary mt-0.5">•</span> {note}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* AI Assist Panel */}
+            <Card className="border-2 border-dashed border-purple-300 bg-purple-50/30">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-purple-600" />
+                    AI Compliance Assistant
+                  </CardTitle>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowAiPanel(!showAiPanel)}
+                    className="text-purple-700 hover:bg-purple-100"
+                  >
+                    {showAiPanel ? "Hide" : "Show"}
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Get AI guidance on origin criteria, eligibility, and required documentation for {selectedAgreement?.shortName}.
+                </p>
+              </CardHeader>
+              {showAiPanel && (
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="aiQuery">Ask a specific question (optional)</Label>
+                    <Textarea
+                      id="aiQuery"
+                      value={aiQuery}
+                      onChange={e => setAiQuery(e.target.value)}
+                      placeholder={`e.g., "Do my cotton t-shirts qualify for USMCA preferential treatment if assembled in Mexico from US yarn?" or leave blank for general guidance.`}
+                      rows={2}
+                    />
+                  </div>
+                  <Button
+                    onClick={handleAiAssist}
+                    disabled={aiAssistMutation.isPending}
+                    className="w-full gap-2 bg-purple-700 hover:bg-purple-800 text-white"
+                  >
+                    {aiAssistMutation.isPending ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing…</>
+                    ) : (
+                      <><Sparkles className="w-4 h-4" /> Analyze & Suggest Fields</>
+                    )}
+                  </Button>
+
+                  {aiResult && (
+                    <div className="space-y-3 text-sm">
+                      {aiResult.eligibilityAssessment && (
+                        <div className="p-3 bg-white rounded border border-purple-200">
+                          <p className="font-semibold text-purple-800 mb-1">Eligibility Assessment</p>
+                          <p className="text-gray-700">{aiResult.eligibilityAssessment}</p>
+                        </div>
+                      )}
+                      {aiResult.criterionExplanation && (
+                        <div className="p-3 bg-blue-50 rounded border border-blue-200">
+                          <p className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
+                            <CheckCircle className="w-4 h-4" />
+                            Recommended Criterion: <Badge className="ml-1">{aiResult.recommendedCriterion}</Badge>
+                          </p>
+                          <p className="text-blue-700">{aiResult.criterionExplanation}</p>
+                        </div>
+                      )}
+                      {aiResult.warnings?.length > 0 && (
+                        <div className="space-y-1">
+                          {aiResult.warnings.map((w: string, i: number) => (
+                            <div key={i} className="flex gap-2 p-2 bg-yellow-50 rounded border border-yellow-200">
+                              <AlertTriangle className="w-4 h-4 text-yellow-600 shrink-0 mt-0.5" />
+                              <p className="text-yellow-800">{w}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {aiResult.suggestions?.length > 0 && (
+                        <div className="space-y-1">
+                          {aiResult.suggestions.map((s: string, i: number) => (
+                            <div key={i} className="flex gap-2 p-2 bg-green-50 rounded border border-green-200">
+                              <ChevronRight className="w-4 h-4 text-green-600 shrink-0 mt-0.5" />
+                              <p className="text-green-800">{s}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {aiResult.requiredDocuments?.length > 0 && (
+                        <div className="p-3 bg-gray-50 rounded border">
+                          <p className="font-semibold mb-1">Required Documents</p>
+                          <ul className="space-y-1">
+                            {aiResult.requiredDocuments.map((d: string, i: number) => (
+                              <li key={i} className="text-xs text-muted-foreground flex gap-1">
+                                <span className="text-primary">•</span> {d}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {aiResult.producerDeclaration && (
+                        <div className="p-3 bg-gray-50 rounded border">
+                          <p className="font-semibold mb-1 flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3" /> Auto-filled Producer Declaration
+                          </p>
+                          <p className="text-xs text-muted-foreground italic">{aiResult.producerDeclaration}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              )}
+            </Card>
+
+            {/* STEP 1: Exporter */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -273,7 +580,7 @@ export default function CertificateOfOrigin() {
               </CardContent>
             </Card>
 
-            {/* 2. Consignee */}
+            {/* STEP 2: Consignee */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -302,7 +609,7 @@ export default function CertificateOfOrigin() {
               </CardContent>
             </Card>
 
-            {/* 3. Goods Description */}
+            {/* STEP 3: Goods */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -328,7 +635,7 @@ export default function CertificateOfOrigin() {
                   <Input id="quantity" value={form.quantity} onChange={e => update("quantity", e.target.value)} placeholder="500" />
                 </div>
                 <div>
-                  <Label htmlFor="quantityUnit">Unit</Label>
+                  <Label>Unit</Label>
                   <Select value={form.quantityUnit} onValueChange={v => update("quantityUnit", v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -353,12 +660,13 @@ export default function CertificateOfOrigin() {
               </CardContent>
             </Card>
 
-            {/* 4. Origin Declaration */}
+            {/* STEP 4: Origin Declaration */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">4</span>
                   Origin Declaration
+                  <Badge variant="outline" className="text-xs">{selectedAgreement?.shortName}</Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="grid sm:grid-cols-2 gap-4">
@@ -367,7 +675,7 @@ export default function CertificateOfOrigin() {
                   <Select value={form.countryOfOrigin} onValueChange={v => update("countryOfOrigin", v)}>
                     <SelectTrigger><SelectValue placeholder="Select country" /></SelectTrigger>
                     <SelectContent className="max-h-60">
-                      {COUNTRIES.map(c => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
+                      {COUNTRIES.map((c: Country) => <SelectItem key={c.code} value={c.code}>{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -376,24 +684,72 @@ export default function CertificateOfOrigin() {
                   <Select value={form.originCriterion} onValueChange={v => update("originCriterion", v)}>
                     <SelectTrigger><SelectValue placeholder="Select criterion" /></SelectTrigger>
                     <SelectContent>
-                      {ORIGIN_CRITERIA.map(c => (
-                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      {selectedAgreement?.originCriteria.map(c => (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.label}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.originCriterion && selectedAgreement && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {selectedAgreement.originCriteria.find(c => c.value === form.originCriterion)?.description}
+                    </p>
+                  )}
                 </div>
                 <div className="sm:col-span-2">
                   <Label htmlFor="producerDeclaration">Producer Declaration</Label>
-                  <Textarea id="producerDeclaration" value={form.producerDeclaration} onChange={e => update("producerDeclaration", e.target.value)} placeholder="The undersigned hereby declares that the goods described above originate in the country shown..." rows={2} />
+                  <Textarea
+                    id="producerDeclaration"
+                    value={form.producerDeclaration || selectedAgreement?.certificationLanguage || ""}
+                    onChange={e => update("producerDeclaration", e.target.value)}
+                    placeholder={selectedAgreement?.certificationLanguage}
+                    rows={3}
+                  />
+                  {selectedAgreement?.certificationLanguage && !form.producerDeclaration && (
+                    <button
+                      type="button"
+                      onClick={() => update("producerDeclaration", selectedAgreement.certificationLanguage)}
+                      className="text-xs text-primary underline mt-1"
+                    >
+                      Use official {selectedAgreement.shortName} certification language
+                    </button>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
-            {/* 5. Transport */}
+            {/* STEP 5: Agreement-specific fields */}
+            {selectedAgreement && selectedAgreement.additionalFields.length > 0 && (
+              <Card className="border-2 border-primary/20 bg-primary/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">5</span>
+                    {selectedAgreement.shortName} — Specific Fields
+                  </CardTitle>
+                  <p className="text-sm text-muted-foreground">
+                    These fields are required or recommended for {selectedAgreement.name} certificates.
+                  </p>
+                </CardHeader>
+                <CardContent className="grid sm:grid-cols-2 gap-4">
+                  {selectedAgreement.additionalFields.map(field => (
+                    <div key={field.key} className={field.type === "textarea" ? "sm:col-span-2" : ""}>
+                      <DynamicField
+                        field={field}
+                        value={form.agreementFields[field.key] || ""}
+                        onChange={val => updateAgreementField(field.key, val)}
+                      />
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* STEP 6: Transport */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">5</span>
+                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">6</span>
                   Transport Details
                 </CardTitle>
               </CardHeader>
@@ -426,11 +782,11 @@ export default function CertificateOfOrigin() {
               </CardContent>
             </Card>
 
-            {/* 6. Certifying Body */}
+            {/* STEP 7: Certifying Body */}
             <Card className="border-2">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">6</span>
+                  <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm flex items-center justify-center font-bold">7</span>
                   Certifying Body
                 </CardTitle>
               </CardHeader>
@@ -460,13 +816,13 @@ export default function CertificateOfOrigin() {
               {generateMutation.isPending ? (
                 <><Loader2 className="w-5 h-5 animate-spin" /> Validating & Generating Certificate…</>
               ) : (
-                <><FileText className="w-5 h-5" /> Generate Certificate of Origin</>
+                <><FileText className="w-5 h-5" /> Generate {selectedAgreement?.shortName} Certificate of Origin</>
               )}
             </Button>
           </div>
 
-          {/* Right panel: Validation / Preview */}
-          <div className={`space-y-6 ${activeSection === "form" && showPreview ? "hidden lg:block" : ""}`}>
+          {/* ── RIGHT: Validation + Preview ────────────────────────────────── */}
+          <div className={`space-y-6 ${activeSection === "form" && generatedCert ? "hidden lg:block" : ""}`}>
 
             {/* Validation Results */}
             {generatedCert && (
@@ -478,14 +834,17 @@ export default function CertificateOfOrigin() {
                     ) : (
                       <AlertTriangle className="w-5 h-5 text-yellow-600" />
                     )}
-                    AI Validation
+                    Compliance Validation
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant={generatedCert.validationResult?.isValid ? "default" : "destructive"}>
                       {generatedCert.validationResult?.isValid ? "Valid" : "Issues Found"}
                     </Badge>
+                    {generatedCert.validationResult?.complianceScore !== undefined && (
+                      <Badge variant="outline">Score: {generatedCert.validationResult.complianceScore}%</Badge>
+                    )}
                     <span className="font-mono text-xs text-muted-foreground">{generatedCert.certificateNumber}</span>
                   </div>
 
@@ -498,9 +857,17 @@ export default function CertificateOfOrigin() {
                     </div>
                   )}
 
+                  {generatedCert.validationResult?.missingFields?.length > 0 && (
+                    <div className="p-3 bg-red-50 rounded border border-red-200">
+                      <p className="font-semibold text-red-700 mb-1">Missing Required Fields</p>
+                      {generatedCert.validationResult.missingFields.map((f: string, i: number) => (
+                        <p key={i} className="text-xs text-red-600">• {f}</p>
+                      ))}
+                    </div>
+                  )}
+
                   {generatedCert.validationResult?.warnings?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="font-semibold text-yellow-700">Warnings</p>
+                    <div className="space-y-1">
                       {generatedCert.validationResult.warnings.map((w: string, i: number) => (
                         <div key={i} className="flex gap-2 p-2 bg-yellow-50 rounded border border-yellow-200">
                           <AlertTriangle className="w-4 h-4 text-yellow-600 mt-0.5 shrink-0" />
@@ -511,31 +878,32 @@ export default function CertificateOfOrigin() {
                   )}
 
                   {generatedCert.validationResult?.suggestions?.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="font-semibold text-green-700">Suggestions</p>
+                    <div className="space-y-1">
                       {generatedCert.validationResult.suggestions.map((s: string, i: number) => (
                         <div key={i} className="flex gap-2 p-2 bg-green-50 rounded border border-green-200">
-                          <CheckCircle className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-green-600 mt-0.5 shrink-0" />
                           <p className="text-green-800">{s}</p>
                         </div>
                       ))}
                     </div>
                   )}
 
-                  {generatedCert.validationResult?.tradeAgreements?.length > 0 && (
-                    <div>
-                      <p className="font-semibold mb-2">Applicable Trade Agreements</p>
-                      <div className="flex flex-wrap gap-1">
-                        {generatedCert.validationResult.tradeAgreements.map((ta: string) => (
-                          <Badge key={ta} variant="outline" className="text-xs">{ta}</Badge>
-                        ))}
-                      </div>
+                  {/* Agreement notes */}
+                  {generatedCert.agreement?.notes?.length > 0 && (
+                    <div className="p-3 bg-gray-50 rounded border">
+                      <p className="font-semibold mb-1 text-xs uppercase tracking-wide text-muted-foreground">
+                        {generatedCert.agreement.shortName} Notes
+                      </p>
+                      {generatedCert.agreement.notes.map((n: string, i: number) => (
+                        <p key={i} className="text-xs text-muted-foreground flex gap-1 mt-1">
+                          <span className="text-primary">•</span> {n}
+                        </p>
+                      ))}
                     </div>
                   )}
 
                   <Separator />
                   <Button
-                    variant="default"
                     size="sm"
                     className="w-full gap-2"
                     onClick={() => issueMutation.mutate({ certificateId: generatedCert.certificateId })}
@@ -550,31 +918,40 @@ export default function CertificateOfOrigin() {
 
             {/* Certificate Preview */}
             {generatedCert && (
-              <CertificatePreview form={form} certNumber={generatedCert.certificateNumber} getCountryName={getCountryName} />
+              <CertificatePreview
+                form={form}
+                certNumber={generatedCert.certificateNumber}
+                agreement={selectedAgreement}
+                getCountryName={getCountryName}
+              />
             )}
 
-            {/* Help card when no cert yet */}
+            {/* Help card */}
             {!generatedCert && (
               <Card className="border-2 bg-muted/30">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">About Certificates of Origin</CardTitle>
+                  <CardTitle className="text-base">How it works</CardTitle>
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground space-y-3">
-                  <p>A Certificate of Origin (COO) is an official document declaring the country where goods were manufactured or produced.</p>
-                  <p>It is required for customs clearance, determining applicable tariff rates, and verifying eligibility for preferential trade agreements (USMCA, CAFTA-DR, etc.).</p>
-                  <p>Fill in all required fields marked with <span className="text-red-500 font-bold">*</span> and click <strong>Generate Certificate</strong> to create your certificate with AI validation.</p>
+                  <p><strong>1. Select a trade agreement</strong> — the form adapts to show the exact fields required for that format (USMCA, CAFTA-DR, EU GSP, etc.).</p>
+                  <p><strong>2. Use AI Assist</strong> — describe your goods and get AI-powered guidance on origin criteria, eligibility, and required documents.</p>
+                  <p><strong>3. Fill the form</strong> — required fields are marked with <span className="text-red-500 font-bold">*</span>.</p>
+                  <p><strong>4. Generate & Download</strong> — get a validated certificate with compliance score and PDF export.</p>
                 </CardContent>
               </Card>
             )}
           </div>
         </div>
 
-        {/* Full-width certificate preview on mobile */}
-        {showPreview && activeSection === "preview" && (
+        {/* Mobile preview */}
+        {generatedCert && activeSection === "preview" && (
           <div className="lg:hidden mt-6">
-            {generatedCert && (
-              <CertificatePreview form={form} certNumber={generatedCert.certificateNumber} getCountryName={getCountryName} />
-            )}
+            <CertificatePreview
+              form={form}
+              certNumber={generatedCert.certificateNumber}
+              agreement={selectedAgreement}
+              getCountryName={getCountryName}
+            />
           </div>
         )}
       </main>
@@ -582,14 +959,16 @@ export default function CertificateOfOrigin() {
   );
 }
 
-// ─── Certificate Preview Component ────────────────────────────────────────────
+// ─── Certificate Preview ──────────────────────────────────────────────────────
 function CertificatePreview({
   form,
   certNumber,
+  agreement,
   getCountryName,
 }: {
   form: CertFormData;
   certNumber: string;
+  agreement: TradeAgreement;
   getCountryName: (code: string) => string;
 }) {
   return (
@@ -597,100 +976,93 @@ function CertificatePreview({
       <CardContent className="p-6 font-serif text-sm">
         {/* Header */}
         <div className="text-center mb-4 border-b-2 border-black pb-4">
-          <h2 className="text-xl font-bold uppercase tracking-widest">Certificate of Origin</h2>
-          <p className="text-xs text-muted-foreground mt-1">Original – Not Negotiable</p>
+          <h2 className="text-lg font-bold uppercase tracking-widest">Certificate of Origin</h2>
+          <p className="text-xs font-semibold text-muted-foreground">{agreement.name}</p>
+          {agreement.officialFormName && (
+            <p className="text-xs text-muted-foreground">{agreement.officialFormName}</p>
+          )}
           <p className="text-xs font-mono mt-1">{certNumber}</p>
         </div>
 
         {/* Exporter & Consignee */}
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div className="border border-black p-3">
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div className="border border-black p-2">
             <p className="text-xs font-bold uppercase mb-1">1. Exporter</p>
-            <p className="font-semibold">{form.exporterName || "—"}</p>
+            <p className="font-semibold text-xs">{form.exporterName || "—"}</p>
             {form.exporterAddress && <p className="text-xs text-muted-foreground whitespace-pre-line">{form.exporterAddress}</p>}
-            {form.exporterCountry && <p className="text-xs font-medium mt-1">{getCountryName(form.exporterCountry)}</p>}
+            {form.exporterCountry && <p className="text-xs font-medium">{getCountryName(form.exporterCountry)}</p>}
           </div>
-          <div className="border border-black p-3">
+          <div className="border border-black p-2">
             <p className="text-xs font-bold uppercase mb-1">2. Consignee</p>
-            <p className="font-semibold">{form.consigneeName || "—"}</p>
+            <p className="font-semibold text-xs">{form.consigneeName || "—"}</p>
             {form.consigneeAddress && <p className="text-xs text-muted-foreground whitespace-pre-line">{form.consigneeAddress}</p>}
-            {form.consigneeCountry && <p className="text-xs font-medium mt-1">{getCountryName(form.consigneeCountry)}</p>}
-          </div>
-        </div>
-
-        {/* Transport */}
-        <div className="border border-black p-3 mb-4">
-          <p className="text-xs font-bold uppercase mb-2">3. Transport Details</p>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <div><span className="text-muted-foreground">Departure:</span> {form.departureDate || "—"}</div>
-            <div><span className="text-muted-foreground">Vessel/Flight:</span> {form.vessel || "—"}</div>
-            <div><span className="text-muted-foreground">Port of Loading:</span> {form.portOfLoading || "—"}</div>
-            <div><span className="text-muted-foreground">Port of Discharge:</span> {form.portOfDischarge || "—"}</div>
-            {form.destinationCountry && <div className="col-span-2"><span className="text-muted-foreground">Destination:</span> {getCountryName(form.destinationCountry)}</div>}
+            {form.consigneeCountry && <p className="text-xs font-medium">{getCountryName(form.consigneeCountry)}</p>}
           </div>
         </div>
 
         {/* Goods */}
-        <div className="border border-black mb-4">
+        <div className="border border-black mb-3">
           <div className="grid grid-cols-12 border-b border-black text-xs font-bold bg-muted/50">
-            <div className="col-span-1 p-2 border-r border-black">Marks</div>
-            <div className="col-span-5 p-2 border-r border-black">Description of Goods</div>
-            <div className="col-span-2 p-2 border-r border-black">HTS Code</div>
-            <div className="col-span-2 p-2 border-r border-black">Qty</div>
-            <div className="col-span-2 p-2">Weight (kg)</div>
+            <div className="col-span-5 p-1 border-r border-black">Description</div>
+            <div className="col-span-2 p-1 border-r border-black">HTS Code</div>
+            <div className="col-span-2 p-1 border-r border-black">Quantity</div>
+            <div className="col-span-3 p-1">Weight (kg)</div>
           </div>
           <div className="grid grid-cols-12 text-xs">
-            <div className="col-span-1 p-2 border-r border-black text-muted-foreground">{form.marksNumbers || "—"}</div>
-            <div className="col-span-5 p-2 border-r border-black">{form.goodsDescription || "—"}</div>
-            <div className="col-span-2 p-2 border-r border-black font-mono">{form.htsCode || "—"}</div>
-            <div className="col-span-2 p-2 border-r border-black">{form.quantity ? `${form.quantity} ${form.quantityUnit}` : "—"}</div>
-            <div className="col-span-2 p-2">
-              <div>G: {form.grossWeight || "—"}</div>
-              <div>N: {form.netWeight || "—"}</div>
-            </div>
+            <div className="col-span-5 p-1 border-r border-black">{form.goodsDescription || "—"}</div>
+            <div className="col-span-2 p-1 border-r border-black font-mono">{form.htsCode || "—"}</div>
+            <div className="col-span-2 p-1 border-r border-black">{form.quantity ? `${form.quantity} ${form.quantityUnit}` : "—"}</div>
+            <div className="col-span-3 p-1 text-xs">G:{form.grossWeight || "—"} N:{form.netWeight || "—"}</div>
           </div>
         </div>
 
         {/* Origin */}
-        <div className="border border-black p-3 mb-4">
-          <p className="text-xs font-bold uppercase mb-2">4. Origin Declaration</p>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <span className="text-muted-foreground">Country of Origin: </span>
-              <span className="font-bold">{form.countryOfOrigin ? getCountryName(form.countryOfOrigin) : "—"}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Criterion: </span>
-              <span className="font-bold">{form.originCriterion || "—"}</span>
-            </div>
+        <div className="border border-black p-2 mb-3">
+          <p className="text-xs font-bold uppercase mb-1">Origin Declaration</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Country: </span><strong>{form.countryOfOrigin ? getCountryName(form.countryOfOrigin) : "—"}</strong></div>
+            <div><span className="text-muted-foreground">Criterion: </span><strong>{form.originCriterion || "—"}</strong></div>
           </div>
           {form.producerDeclaration && (
-            <p className="text-xs text-muted-foreground mt-2 italic">{form.producerDeclaration}</p>
+            <p className="text-xs text-muted-foreground mt-1 italic">{form.producerDeclaration}</p>
           )}
         </div>
 
-        {/* Certification */}
-        <div className="border border-black p-3">
-          <p className="text-xs font-bold uppercase mb-2">5. Certification</p>
-          <div className="grid grid-cols-2 gap-4 text-xs">
-            <div>
-              <p className="text-muted-foreground">Certifying Authority:</p>
-              <p>{form.chamberName || "—"}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Issue Date & Place:</p>
-              <p>{form.issueDate || "—"}{form.issuePlace ? `, ${form.issuePlace}` : ""}</p>
+        {/* Agreement-specific fields preview */}
+        {agreement.additionalFields.length > 0 && Object.keys(form.agreementFields).length > 0 && (
+          <div className="border border-black p-2 mb-3">
+            <p className="text-xs font-bold uppercase mb-1">{agreement.shortName} — Specific Fields</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+              {agreement.additionalFields.map(field => {
+                const val = form.agreementFields[field.key];
+                if (!val) return null;
+                return (
+                  <div key={field.key}>
+                    <span className="text-muted-foreground">{field.label}: </span>
+                    <span>{val === "true" ? "Yes" : val === "false" ? "No" : val}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
-          <div className="mt-4 pt-4 border-t border-dashed border-gray-400 grid grid-cols-2 gap-4">
+        )}
+
+        {/* Certification */}
+        <div className="border border-black p-2">
+          <p className="text-xs font-bold uppercase mb-1">Certification</p>
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div><span className="text-muted-foreground">Authority: </span>{form.chamberName || "—"}</div>
+            <div><span className="text-muted-foreground">Date/Place: </span>{form.issueDate || "—"}{form.issuePlace ? `, ${form.issuePlace}` : ""}</div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-dashed border-gray-400 grid grid-cols-2 gap-4">
             <div>
-              <p className="text-xs text-muted-foreground mb-6">Authorized Signature</p>
+              <p className="text-xs text-muted-foreground mb-4">Authorized Signature</p>
               <div className="border-b border-black"></div>
               <p className="text-xs mt-1">{form.exporterSignatory || "Signature"}</p>
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-6">Official Stamp</p>
-              <div className="w-20 h-16 border-2 border-dashed border-gray-300 rounded-full mx-auto flex items-center justify-center">
+            <div className="flex flex-col items-center">
+              <p className="text-xs text-muted-foreground mb-1">Official Stamp</p>
+              <div className="w-16 h-12 border-2 border-dashed border-gray-300 rounded-full flex items-center justify-center">
                 <span className="text-xs text-gray-300">STAMP</span>
               </div>
             </div>
@@ -701,9 +1073,8 @@ function CertificatePreview({
   );
 }
 
-// ─── PDF Generation ────────────────────────────────────────────────────────────
-function generatePDF(form: CertFormData, certNumber: string) {
-  // Dynamic import to keep bundle size small
+// ─── PDF Generation ───────────────────────────────────────────────────────────
+function generatePDF(form: CertFormData, certNumber: string, agreement: TradeAgreement) {
   import("jspdf").then(({ jsPDF }) => {
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = 210;
@@ -711,120 +1082,105 @@ function generatePDF(form: CertFormData, certNumber: string) {
     const contentW = pageW - margin * 2;
     let y = margin;
 
-    const line = () => { doc.setLineWidth(0.3); doc.line(margin, y, pageW - margin, y); y += 4; };
     const bold = (size = 10) => { doc.setFont("helvetica", "bold"); doc.setFontSize(size); };
     const normal = (size = 9) => { doc.setFont("helvetica", "normal"); doc.setFontSize(size); };
-    const addText = (text: string, x: number, indent = 0) => {
-      const lines = doc.splitTextToSize(text, contentW - indent);
-      doc.text(lines, x, y);
-      y += lines.length * 5;
-    };
+    const ln = (n = 5) => { y += n; };
+    const hline = () => { doc.setLineWidth(0.3); doc.line(margin, y, pageW - margin, y); ln(4); };
 
-    // Title
-    bold(16);
-    doc.text("CERTIFICATE OF ORIGIN", pageW / 2, y, { align: "center" });
-    y += 6;
+    bold(14);
+    doc.text("CERTIFICATE OF ORIGIN", pageW / 2, y, { align: "center" }); ln(6);
     normal(9);
-    doc.text("Original – Not Negotiable", pageW / 2, y, { align: "center" });
-    y += 5;
+    doc.text(agreement.name, pageW / 2, y, { align: "center" }); ln(5);
     bold(9);
-    doc.text(`Certificate No: ${certNumber}`, pageW / 2, y, { align: "center" });
-    y += 8;
-    line();
+    doc.text(`Certificate No: ${certNumber}`, pageW / 2, y, { align: "center" }); ln(8);
+    hline();
 
-    // Exporter & Consignee side by side
+    // Exporter & Consignee
     const colW = contentW / 2 - 3;
     const col2X = margin + colW + 6;
-    const sectionY = y;
+    const sY = y;
 
-    bold(8); doc.text("1. EXPORTER / SELLER", margin, y); y += 5;
+    bold(8); doc.text("1. EXPORTER / SELLER", margin, y); ln(5);
     normal(9);
-    doc.text(form.exporterName || "—", margin, y); y += 5;
-    if (form.exporterAddress) { addText(form.exporterAddress, margin); }
-    if (form.exporterCountry) { doc.text(form.exporterCountry, margin, y); y += 5; }
-    if (form.exporterSignatory) { doc.text(`Signatory: ${form.exporterSignatory}`, margin, y); y += 5; }
+    doc.text(form.exporterName || "—", margin, y); ln(5);
+    if (form.exporterAddress) {
+      const lines = doc.splitTextToSize(form.exporterAddress, colW);
+      doc.text(lines, margin, y); y += lines.length * 4;
+    }
+    if (form.exporterCountry) { doc.text(form.exporterCountry, margin, y); ln(5); }
+    if (form.exporterSignatory) { doc.text(`Signatory: ${form.exporterSignatory}`, margin, y); ln(5); }
+    const c1Y = y;
 
-    const col1EndY = y;
-    y = sectionY;
-    bold(8); doc.text("2. CONSIGNEE / BUYER", col2X, y); y += 5;
+    y = sY;
+    bold(8); doc.text("2. CONSIGNEE / BUYER", col2X, y); ln(5);
     normal(9);
-    doc.text(form.consigneeName || "—", col2X, y); y += 5;
+    doc.text(form.consigneeName || "—", col2X, y); ln(5);
     if (form.consigneeAddress) {
       const lines = doc.splitTextToSize(form.consigneeAddress, colW);
-      doc.text(lines, col2X, y);
-      y += lines.length * 5;
+      doc.text(lines, col2X, y); y += lines.length * 4;
     }
-    if (form.consigneeCountry) { doc.text(form.consigneeCountry, col2X, y); y += 5; }
+    if (form.consigneeCountry) { doc.text(form.consigneeCountry, col2X, y); ln(5); }
 
-    y = Math.max(col1EndY, y) + 4;
-    line();
+    y = Math.max(c1Y, y) + 4;
+    hline();
 
-    // Transport
-    bold(8); doc.text("3. TRANSPORT DETAILS", margin, y); y += 5;
-    normal(9);
-    const transportPairs = [
-      ["Departure Date:", form.departureDate || "—"],
-      ["Vessel / Flight:", form.vessel || "—"],
-      ["Port of Loading:", form.portOfLoading || "—"],
-      ["Port of Discharge:", form.portOfDischarge || "—"],
-      ["Destination:", form.destinationCountry || "—"],
-    ];
-    transportPairs.forEach(([label, val], i) => {
-      const x = i % 2 === 0 ? margin : pageW / 2;
-      if (i % 2 === 0 && i > 0) y += 5;
-      bold(8); doc.text(label, x, y);
-      normal(9); doc.text(val, x + 35, y);
-    });
-    y += 8; line();
-
-    // Goods table
-    bold(8); doc.text("4. DESCRIPTION OF GOODS", margin, y); y += 5;
-    const tableHeaders = ["Marks & Nos", "Description", "HTS Code", "Quantity", "Weight (kg)"];
-    const colWidths = [25, 70, 25, 25, 25];
+    // Goods
+    bold(8); doc.text("3. DESCRIPTION OF GOODS", margin, y); ln(5);
+    const headers = ["Description", "HTS Code", "Quantity", "Weight"];
+    const cw = [70, 30, 30, 30];
     let tx = margin;
     bold(8);
-    tableHeaders.forEach((h, i) => { doc.text(h, tx, y); tx += colWidths[i]; });
-    y += 5;
-    doc.setLineWidth(0.2); doc.line(margin, y - 1, pageW - margin, y - 1);
+    headers.forEach((h, i) => { doc.text(h, tx, y); tx += cw[i]; });
+    ln(5);
+    doc.line(margin, y - 1, pageW - margin, y - 1);
     normal(9);
     tx = margin;
-    const goodsRow = [
-      form.marksNumbers || "—",
+    [
       form.goodsDescription || "—",
       form.htsCode || "—",
       form.quantity ? `${form.quantity} ${form.quantityUnit}` : "—",
       `G:${form.grossWeight || "—"} N:${form.netWeight || "—"}`,
-    ];
-    goodsRow.forEach((cell, i) => {
-      const lines = doc.splitTextToSize(cell, colWidths[i] - 2);
+    ].forEach((cell, i) => {
+      const lines = doc.splitTextToSize(cell, cw[i] - 2);
       doc.text(lines, tx, y);
-      tx += colWidths[i];
+      tx += cw[i];
     });
-    y += 12; line();
+    ln(12); hline();
 
     // Origin
-    bold(8); doc.text("5. ORIGIN DECLARATION", margin, y); y += 5;
+    bold(8); doc.text("4. ORIGIN DECLARATION", margin, y); ln(5);
     normal(9);
     bold(8); doc.text("Country of Origin:", margin, y);
     normal(10); doc.text(form.countryOfOrigin || "—", margin + 40, y);
     bold(8); doc.text("Criterion:", pageW / 2, y);
     normal(10); doc.text(form.originCriterion || "—", pageW / 2 + 25, y);
-    y += 7;
+    ln(7);
     if (form.producerDeclaration) {
       normal(8);
       const lines = doc.splitTextToSize(form.producerDeclaration, contentW);
-      doc.text(lines, margin, y);
-      y += lines.length * 4 + 3;
+      doc.text(lines, margin, y); y += lines.length * 4 + 3;
     }
-    line();
+    hline();
 
-    // Certification & Signature
-    bold(8); doc.text("6. CERTIFICATION", margin, y); y += 5;
+    // Agreement-specific fields
+    const agFields = Object.entries(form.agreementFields).filter(([, v]) => v);
+    if (agFields.length > 0) {
+      bold(8); doc.text(`5. ${agreement.shortName.toUpperCase()} — SPECIFIC FIELDS`, margin, y); ln(5);
+      normal(8);
+      agFields.forEach(([key, val]) => {
+        const fieldDef = agreement.additionalFields.find(f => f.key === key);
+        const label = fieldDef?.label || key;
+        doc.text(`${label}: ${val === "true" ? "Yes" : val === "false" ? "No" : val}`, margin, y); ln(4);
+      });
+      hline();
+    }
+
+    // Certification
+    bold(8); doc.text("6. CERTIFICATION", margin, y); ln(5);
     normal(9);
-    doc.text(`Certifying Authority: ${form.chamberName || "—"}`, margin, y); y += 5;
-    doc.text(`Issue Date: ${form.issueDate || "—"}    Place: ${form.issuePlace || "—"}`, margin, y); y += 12;
-    doc.line(margin, y, margin + 70, y);
-    y += 4;
+    doc.text(`Authority: ${form.chamberName || "—"}`, margin, y); ln(5);
+    doc.text(`Date: ${form.issueDate || "—"}  Place: ${form.issuePlace || "—"}`, margin, y); ln(12);
+    doc.line(margin, y, margin + 70, y); ln(4);
     normal(8); doc.text("Authorized Signature & Stamp", margin, y);
 
     doc.save(`${certNumber}.pdf`);

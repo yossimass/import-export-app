@@ -796,9 +796,104 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
   // CERTIFICATE OF ORIGIN
   // ============================================================================
   certificate: router({
-    // Generate certificate number and validate with AI
+
+    // ── AI Assist: suggest field values for a given trade agreement ──────────
+    aiAssist: protectedProcedure
+      .input(z.object({
+        tradeAgreement: z.string(),
+        exporterCountry: z.string().optional(),
+        destinationCountry: z.string().optional(),
+        goodsDescription: z.string().optional(),
+        htsCode: z.string().optional(),
+        userQuery: z.string().optional(), // free-form question from user
+      }))
+      .mutation(async ({ input }) => {
+        const { TRADE_AGREEMENTS, getAgreementById } = await import("../shared/tradeAgreements.js");
+        const agreement = getAgreementById(input.tradeAgreement);
+        const agreementName = agreement?.name || input.tradeAgreement;
+        const criteriaList = agreement?.originCriteria
+          .map(c => `${c.value}: ${c.label} — ${c.description}`)
+          .join("\n") || "";
+
+        const prompt = `You are a trade compliance expert specializing in Certificates of Origin and free trade agreements.
+
+Trade Agreement: ${agreementName}
+Exporter Country: ${input.exporterCountry || "not specified"}
+Destination Country: ${input.destinationCountry || "not specified"}
+Goods Description: ${input.goodsDescription || "not specified"}
+HTS/HS Code: ${input.htsCode || "not specified"}
+User Question: ${input.userQuery || "Please suggest appropriate field values for this certificate."}
+
+Available origin criteria for ${agreementName}:
+${criteriaList}
+
+Provide expert guidance. Return JSON with this EXACT structure:
+{
+  "recommendedCriterion": "A",
+  "criterionExplanation": "Detailed explanation of why this criterion applies",
+  "producerDeclaration": "Suggested producer declaration text",
+  "warnings": ["Any compliance warnings"],
+  "suggestions": ["Actionable suggestions"],
+  "requiredDocuments": ["List of documents needed"],
+  "tradeAgreementNotes": ["Key notes specific to this agreement"],
+  "eligibilityAssessment": "Assessment of whether these goods likely qualify for preferential treatment"
+}`;
+
+        const aiResponse = await invokeLLM({
+          messages: [
+            { role: "system", content: "You are a trade compliance expert. Return only valid JSON." },
+            { role: "user", content: prompt }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = aiResponse.choices[0]?.message?.content;
+        try {
+          return JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
+        } catch {
+          return {
+            recommendedCriterion: "",
+            criterionExplanation: "Unable to parse AI response.",
+            producerDeclaration: "",
+            warnings: [],
+            suggestions: [],
+            requiredDocuments: agreement?.requiredDocuments || [],
+            tradeAgreementNotes: agreement?.notes || [],
+            eligibilityAssessment: "Please review manually.",
+          };
+        }
+      }),
+
+    // ── Get applicable agreements for a country pair ─────────────────────────
+    getApplicableAgreements: publicProcedure
+      .input(z.object({
+        exporterCountry: z.string(),
+        destinationCountry: z.string(),
+      }))
+      .query(async ({ input }) => {
+        const { getApplicableAgreements } = await import("../shared/tradeAgreements.js");
+        const agreements = getApplicableAgreements(input.exporterCountry, input.destinationCountry);
+        return agreements.map(a => ({
+          id: a.id,
+          name: a.name,
+          shortName: a.shortName,
+          description: a.description,
+          officialFormName: a.officialFormName,
+        }));
+      }),
+
+    // ── Get full agreement definition (fields, criteria, etc.) ───────────────
+    getAgreementDefinition: publicProcedure
+      .input(z.object({ agreementId: z.string() }))
+      .query(async ({ input }) => {
+        const { getAgreementById } = await import("../shared/tradeAgreements.js");
+        return getAgreementById(input.agreementId) || null;
+      }),
+
+    // ── Generate certificate with trade agreement support ────────────────────
     generate: protectedProcedure
       .input(z.object({
+        tradeAgreement: z.string().default("GENERIC"),
         exporterName: z.string(),
         exporterAddress: z.string().optional(),
         exporterCountry: z.string().optional(),
@@ -826,38 +921,46 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
         issueDate: z.string().optional(),
         issuePlace: z.string().optional(),
         shipmentId: z.number().optional(),
+        // Trade-agreement-specific additional fields (stored as JSON)
+        agreementFields: z.record(z.string(), z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        // AI validation of origin criteria
+        const { getAgreementById } = await import("../shared/tradeAgreements.js");
+        const agreement = getAgreementById(input.tradeAgreement);
+        const agreementName = agreement?.name || input.tradeAgreement;
+        const criteriaList = agreement?.originCriteria
+          .map(c => `${c.value}: ${c.label} — ${c.description}`)
+          .join("\n") || "";
+
+        // AI validation tailored to the selected trade agreement
         const validationPrompt = `You are a trade compliance expert specializing in Certificates of Origin.
 
-Validate the following Certificate of Origin details and provide guidance:
+Validate this ${agreementName} Certificate of Origin:
 
-Exporter: ${input.exporterName} (${input.exporterCountry || 'unknown country'})
-Consignee: ${input.consigneeName} (${input.consigneeCountry || 'unknown country'})
+Exporter: ${input.exporterName} (${input.exporterCountry || 'unknown'})
+Consignee: ${input.consigneeName} (${input.consigneeCountry || 'unknown'})
 Goods: ${input.goodsDescription}
 HTS Code: ${input.htsCode || 'not provided'}
 Country of Origin: ${input.countryOfOrigin}
 Origin Criterion: ${input.originCriterion || 'not specified'}
 Destination: ${input.destinationCountry || 'not specified'}
+Trade Agreement: ${agreementName}
+Agreement-specific fields: ${JSON.stringify(input.agreementFields || {})}
+
+Available criteria for ${agreementName}:
+${criteriaList}
 
 Return JSON with this EXACT structure:
 {
   "isValid": true,
-  "warnings": ["warning 1", "warning 2"],
+  "warnings": ["warning 1"],
   "suggestions": ["suggestion 1"],
-  "originCriterionExplanation": "Explanation of the applicable origin criterion",
+  "originCriterionExplanation": "Explanation of the criterion under ${agreementName}",
   "recommendedCriterion": "A",
-  "tradeAgreements": ["USMCA", "CAFTA-DR"]
-}
-
-Origin criteria meanings:
-- A: Wholly obtained or produced in the country
-- B: Produced exclusively from originating materials
-- C: Satisfies tariff classification change rule
-- D: Satisfies regional value content requirement
-- E: Satisfies specific manufacturing process
-- F: Combination of C and D`;
+  "tradeAgreements": ["${input.tradeAgreement}"],
+  "complianceScore": 85,
+  "missingFields": ["field name if required but missing"]
+}`;
 
         const aiResponse = await invokeLLM({
           messages: [
@@ -868,22 +971,25 @@ Origin criteria meanings:
         });
 
         const content = aiResponse.choices[0]?.message?.content;
-        let validationResult = {
+        let validationResult: any = {
           isValid: true,
           warnings: [] as string[],
           suggestions: [] as string[],
           originCriterionExplanation: "Origin criterion validated",
+          complianceScore: 100,
+          missingFields: [],
         };
         try {
           const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
           validationResult = parsed;
         } catch {}
 
-        // Generate certificate number
+        // Generate certificate number with agreement prefix
         const now = new Date();
         const dateStr = now.toISOString().slice(0, 10).replace(/-/g, "");
         const seq = String(Math.floor(Math.random() * 9000) + 1000);
-        const certificateNumber = `COO-${dateStr}-${seq}`;
+        const prefix = input.tradeAgreement === "GENERIC" ? "COO" : input.tradeAgreement.replace(/[^A-Z]/g, "").slice(0, 6);
+        const certificateNumber = `${prefix}-${dateStr}-${seq}`;
 
         // Save to database
         const certId = await db.createCertificate({
@@ -891,6 +997,8 @@ Origin criteria meanings:
           shipmentId: input.shipmentId,
           certificateNumber,
           status: "draft",
+          tradeAgreement: input.tradeAgreement,
+          agreementFields: input.agreementFields || undefined,
           exporterName: input.exporterName,
           exporterAddress: input.exporterAddress,
           exporterCountry: input.exporterCountry,
@@ -924,6 +1032,14 @@ Origin criteria meanings:
           certificateId: certId,
           certificateNumber,
           validationResult,
+          agreement: agreement ? {
+            id: agreement.id,
+            name: agreement.name,
+            shortName: agreement.shortName,
+            certificationLanguage: agreement.certificationLanguage,
+            requiredDocuments: agreement.requiredDocuments,
+            notes: agreement.notes,
+          } : null,
         };
       }),
 

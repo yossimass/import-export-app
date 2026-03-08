@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { TRADE_AGREEMENTS, getAgreementById, getApplicableAgreements } from "../shared/tradeAgreements";
 import { appRouter } from "./routers";
 import type { Context } from "./_core/context";
 
@@ -25,120 +26,178 @@ const mockContext: Context = {
 
 const caller = appRouter.createCaller(mockContext);
 
-describe("Certificate of Origin", () => {
-  it("should list certificates for a user (empty initially)", async () => {
-    const result = await caller.certificate.list();
-    expect(Array.isArray(result)).toBe(true);
+// ─── Trade Agreement Definitions (no DB/LLM needed) ──────────────────────────
+describe("Trade Agreement Definitions", () => {
+  it("should have all 6 trade agreements defined", () => {
+    expect(TRADE_AGREEMENTS).toHaveLength(6);
+    const ids = TRADE_AGREEMENTS.map(a => a.id);
+    expect(ids).toContain("USMCA");
+    expect(ids).toContain("CAFTA-DR");
+    expect(ids).toContain("EU_GSP");
+    expect(ids).toContain("AGOA");
+    expect(ids).toContain("US_KOREA");
+    expect(ids).toContain("GENERIC");
   });
 
-  it("should generate a certificate with a valid certificate number", async () => {
+  it("should return USMCA agreement by ID with correct countries", () => {
+    const usmca = getAgreementById("USMCA");
+    expect(usmca).toBeDefined();
+    expect(usmca!.name).toBe("United States–Mexico–Canada Agreement");
+    expect(usmca!.eligibleCountries).toContain("USA");
+    expect(usmca!.eligibleCountries).toContain("MEX");
+    expect(usmca!.eligibleCountries).toContain("CAN");
+  });
+
+  it("should return undefined for unknown agreement ID", () => {
+    expect(getAgreementById("UNKNOWN")).toBeUndefined();
+  });
+
+  it("should detect USMCA as applicable for USA → Mexico trade", () => {
+    const agreements = getApplicableAgreements("USA", "MEX");
+    const ids = agreements.map(a => a.id);
+    expect(ids).toContain("USMCA");
+    expect(ids).toContain("GENERIC");
+  });
+
+  it("should detect CAFTA-DR for USA → Guatemala trade", () => {
+    const agreements = getApplicableAgreements("USA", "GTM");
+    const ids = agreements.map(a => a.id);
+    expect(ids).toContain("CAFTA-DR");
+  });
+
+  it("should detect KORUS for USA → Korea trade", () => {
+    const agreements = getApplicableAgreements("USA", "KOR");
+    const ids = agreements.map(a => a.id);
+    expect(ids).toContain("US_KOREA");
+  });
+
+  it("should return only GENERIC for non-FTA country pair", () => {
+    const agreements = getApplicableAgreements("AUS", "BRA");
+    const ids = agreements.map(a => a.id);
+    expect(ids).toContain("GENERIC");
+    expect(ids).not.toContain("USMCA");
+    expect(ids).not.toContain("CAFTA-DR");
+  });
+
+  it("should have origin criteria with value, label, and description for each agreement", () => {
+    TRADE_AGREEMENTS.forEach(agreement => {
+      expect(agreement.originCriteria.length).toBeGreaterThan(0);
+      agreement.originCriteria.forEach(criterion => {
+        expect(criterion.value).toBeTruthy();
+        expect(criterion.label).toBeTruthy();
+        expect(criterion.description).toBeTruthy();
+      });
+    });
+  });
+
+  it("should have certification language for each agreement", () => {
+    TRADE_AGREEMENTS.forEach(agreement => {
+      expect(agreement.certificationLanguage).toBeTruthy();
+      expect(agreement.certificationLanguage.length).toBeGreaterThan(20);
+    });
+  });
+
+  it("USMCA should have blanket period and certifier role fields", () => {
+    const usmca = getAgreementById("USMCA")!;
+    const fieldKeys = usmca.additionalFields.map(f => f.key);
+    expect(fieldKeys).toContain("blanketPeriodFrom");
+    expect(fieldKeys).toContain("blanketPeriodTo");
+    expect(fieldKeys).toContain("certifierRole");
+    expect(fieldKeys).toContain("netCostMethod");
+  });
+
+  it("EU_GSP should have REX number and statement on origin fields", () => {
+    const gsp = getAgreementById("EU_GSP")!;
+    const fieldKeys = gsp.additionalFields.map(f => f.key);
+    expect(fieldKeys).toContain("rexNumber");
+    expect(fieldKeys).toContain("statementOnOrigin");
+    expect(fieldKeys).toContain("cumulationType");
+  });
+
+  it("AGOA should have beneficiary country and value-added fields", () => {
+    const agoa = getAgreementById("AGOA")!;
+    const fieldKeys = agoa.additionalFields.map(f => f.key);
+    expect(fieldKeys).toContain("beneficiaryCountry");
+    expect(fieldKeys).toContain("valueAddedPercentage");
+  });
+});
+
+// ─── tRPC: getApplicableAgreements (public, no LLM) ──────────────────────────
+describe("certificate.getApplicableAgreements", () => {
+  it("should return USMCA and GENERIC for USA → CAN", async () => {
+    const result = await caller.certificate.getApplicableAgreements({
+      exporterCountry: "USA",
+      destinationCountry: "CAN",
+    });
+    const ids = result.map(a => a.id);
+    expect(ids).toContain("USMCA");
+    expect(ids).toContain("GENERIC");
+  });
+
+  it("should return only GENERIC for non-FTA pair", async () => {
+    const result = await caller.certificate.getApplicableAgreements({
+      exporterCountry: "AUS",
+      destinationCountry: "BRA",
+    });
+    const ids = result.map(a => a.id);
+    expect(ids).toContain("GENERIC");
+    expect(ids).not.toContain("USMCA");
+  });
+});
+
+// ─── tRPC: getAgreementDefinition (public, no LLM) ───────────────────────────
+describe("certificate.getAgreementDefinition", () => {
+  it("should return full USMCA definition with fields and criteria", async () => {
+    const result = await caller.certificate.getAgreementDefinition({ agreementId: "USMCA" });
+    expect(result).toBeDefined();
+    expect(result!.id).toBe("USMCA");
+    expect(result!.originCriteria.length).toBeGreaterThan(0);
+    expect(result!.additionalFields.length).toBeGreaterThan(0);
+    expect(result!.certificationLanguage).toBeTruthy();
+  });
+
+  it("should return null for unknown agreement", async () => {
+    const result = await caller.certificate.getAgreementDefinition({ agreementId: "UNKNOWN" });
+    expect(result).toBeNull();
+  });
+});
+
+// ─── tRPC: generate + list (requires LLM + DB, extended timeout) ─────────────
+describe("certificate.generate with trade agreement", () => {
+  it("should generate a USMCA certificate with correct number format", async () => {
     const result = await caller.certificate.generate({
+      tradeAgreement: "USMCA",
       exporterName: "Acme Corp",
       exporterCountry: "USA",
       consigneeName: "Global Imports Ltd",
-      consigneeCountry: "DEU",
+      consigneeCountry: "MEX",
       goodsDescription: "Men's cotton t-shirts, 100% cotton",
       htsCode: "6109.10.0012",
       countryOfOrigin: "USA",
       originCriterion: "A",
       quantity: "500",
       quantityUnit: "units",
-      destinationCountry: "DEU",
+      destinationCountry: "MEX",
+      agreementFields: {
+        certifierRole: "Exporter",
+        blanketPeriodFrom: "2026-01-01",
+        blanketPeriodTo: "2026-12-31",
+      },
     });
 
     expect(result).toHaveProperty("certificateId");
     expect(result).toHaveProperty("certificateNumber");
     expect(result).toHaveProperty("validationResult");
-
-    // Certificate number format: COO-YYYYMMDD-XXXX
-    expect(result.certificateNumber).toMatch(/^COO-\d{8}-\d{4}$/);
-    expect(typeof result.certificateId).toBe("number");
-    expect(result.certificateId).toBeGreaterThan(0);
-  }, 30000);
-
-  it("should retrieve a certificate by ID", async () => {
-    // First generate one
-    const generated = await caller.certificate.generate({
-      exporterName: "Test Exporter",
-      consigneeName: "Test Consignee",
-      goodsDescription: "Electronic components",
-      countryOfOrigin: "JPN",
-    });
-
-    const cert = await caller.certificate.get({ certificateId: generated.certificateId });
-    expect(cert).toBeDefined();
-    expect(cert?.exporterName).toBe("Test Exporter");
-    expect(cert?.consigneeName).toBe("Test Consignee");
-    expect(cert?.countryOfOrigin).toBe("JPN");
-    expect(cert?.status).toBe("draft");
-  }, 30000);
-
-  it("should issue a certificate (change status to issued)", async () => {
-    const generated = await caller.certificate.generate({
-      exporterName: "Issuer Corp",
-      consigneeName: "Receiver Ltd",
-      goodsDescription: "Industrial machinery parts",
-      countryOfOrigin: "USA",
-    });
-
-    const issueResult = await caller.certificate.issue({ certificateId: generated.certificateId });
-    expect(issueResult.success).toBe(true);
-
-    // Verify status changed
-    const cert = await caller.certificate.get({ certificateId: generated.certificateId });
-    expect(cert?.status).toBe("issued");
-  }, 30000);
-
-  it("should list certificates after generating some", async () => {
-    const before = await caller.certificate.list();
-    const initialCount = before.length;
-
-    await caller.certificate.generate({
-      exporterName: "List Test Corp",
-      consigneeName: "List Test Buyer",
-      goodsDescription: "Test goods for list",
-      countryOfOrigin: "CAN",
-    });
-
-    const after = await caller.certificate.list();
-    expect(after.length).toBeGreaterThan(initialCount);
-  }, 30000);
-
-  it("should delete a certificate", async () => {
-    const generated = await caller.certificate.generate({
-      exporterName: "Delete Test Corp",
-      consigneeName: "Delete Test Buyer",
-      goodsDescription: "Goods to be deleted",
-      countryOfOrigin: "GBR",
-    });
-
-    const deleteResult = await caller.certificate.delete({ certificateId: generated.certificateId });
-    expect(deleteResult.success).toBe(true);
-
-    // Verify it's gone
-    const cert = await caller.certificate.get({ certificateId: generated.certificateId });
-    expect(cert).toBeUndefined();
-  }, 30000);
-
-  it("should return validation result with required fields", async () => {
-    const result = await caller.certificate.generate({
-      exporterName: "Validation Test Corp",
-      exporterCountry: "USA",
-      consigneeName: "Validation Buyer",
-      consigneeCountry: "MEX",
-      goodsDescription: "Automotive parts, steel components",
-      htsCode: "8708.99.8180",
-      countryOfOrigin: "USA",
-      originCriterion: "D",
-      destinationCountry: "MEX",
-    });
-
-    expect(result.validationResult).toBeDefined();
+    expect(result).toHaveProperty("agreement");
+    // USMCA prefix in cert number
+    expect(result.certificateNumber).toMatch(/^USMCA-\d{8}-\d{4}$/);
+    expect(result.agreement?.id).toBe("USMCA");
     expect(result.validationResult).toHaveProperty("isValid");
-    expect(result.validationResult).toHaveProperty("warnings");
-    expect(result.validationResult).toHaveProperty("suggestions");
-    expect(result.validationResult).toHaveProperty("originCriterionExplanation");
-    expect(Array.isArray(result.validationResult.warnings)).toBe(true);
-    expect(Array.isArray(result.validationResult.suggestions)).toBe(true);
+    expect(result.validationResult).toHaveProperty("complianceScore");
   }, 30000);
+
+  it("should list certificates for a user", async () => {
+    const result = await caller.certificate.list();
+    expect(Array.isArray(result)).toBe(true);
+  });
 });

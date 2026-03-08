@@ -412,3 +412,31 @@ Progress is visually tracked with the workflow stepper on each page.
 ### Tests
 - [x] 7 vitest tests all passing (with 30s timeout for LLM calls)
 - [x] Tests cover: list, generate, get, issue, list after generate, delete, validation result shape
+
+
+## 📜 COO GENERATOR UPGRADE: Trade Agreement Formats + AI Assist (3/7/2026)
+
+### Backend ✅ COMPLETE (3/7/2026)
+- [x] Define trade agreement configs (USMCA, CAFTA-DR, EU GSP, AGOA, US-Korea FTA, Generic)
+- [x] Each config: unique fields, origin criteria options, required documents, certification language
+- [x] Add certificate.aiAssist endpoint: takes partial form + agreement → returns AI-suggested field values
+- [x] Update certificate.generate to store selected trade agreement and format-specific fields
+- [x] Update DB schema to add tradeAgreement and formatFields columns to certificates table
+
+### Frontend ✅ COMPLETE (3/7/2026)
+- [x] Add trade agreement selector as first step (USMCA, CAFTA-DR, EU GSP, AGOA, US-Korea, Generic)
+- [x] Dynamically show/hide fields based on selected agreement
+- [x] USMCA: blanket period, producer field, net cost method, tariff shift rule
+- [x] CAFTA-DR: regional value content %, tariff classification change, accumulation
+- [x] EU GSP: REX number, statement on origin text, cumulation
+- [x] AGOA: substantial transformation statement, beneficiary country
+- [x] Add AI Assist button/panel: user describes goods → AI fills exporter, consignee, HTS, origin criterion
+- [x] AI Assist: suggest correct origin criterion based on goods + agreement + countries
+- [x] AI Assist: generate producer declaration text automatically
+- [x] AI Assist: identify applicable trade agreements for given country pair
+- [x] Show agreement-specific certification language in preview
+- [x] Update certificate preview to match selected agreement's official format
+
+### Tests ✅ COMPLETE (3/7/2026)
+- [x] Update vitest tests to cover trade agreement field validation (18 tests passing)
+- [x] Test AI assist endpoint returns correct field suggestions

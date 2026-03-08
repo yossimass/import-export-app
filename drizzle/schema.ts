@@ -262,6 +262,8 @@ export const certificates = mysqlTable("certificates", {
   // Certificate metadata
   certificateNumber: varchar("certificateNumber", { length: 50 }).notNull(),
   status: mysqlEnum("status", ["draft", "issued", "revoked"]).default("draft").notNull(),
+  tradeAgreement: varchar("tradeAgreement", { length: 50 }).default("GENERIC"),
+  agreementFields: json("agreementFields").$type<Record<string, string>>(),
 
   // Exporter info
   exporterName: varchar("exporterName", { length: 255 }).notNull(),
