@@ -440,3 +440,34 @@ Progress is visually tracked with the workflow stepper on each page.
 ### Tests ✅ COMPLETE (3/7/2026)
 - [x] Update vitest tests to cover trade agreement field validation (18 tests passing)
 - [x] Test AI assist endpoint returns correct field suggestions
+
+## 📦 PO IMPORT + COO IN SHIPMENT FLOW (3/10/2026)
+
+### Backend ✅ COMPLETE (3/10/2026)
+- [x] Add PO import endpoint: accept PDF/image/DOCX upload, extract text, use LLM to parse fields
+- [x] PO extraction fields: buyer, seller, ship-to address, line items (description, qty, unit price, HTS), incoterms, currency, PO number, dates
+- [x] Store uploaded PO file in S3, save extracted data to shipment record
+- [x] Add shipment.createFromPO procedure: creates shipment pre-filled from PO extraction
+- [x] Add shipment.updateCooStatus procedure: syncs COO status back to shipment
+- [x] Update shipments table to track COO status (none / draft / issued) and certificate ID
+
+### Frontend - Shipment Flow ✅ COMPLETE (3/10/2026)
+- [x] Add "Import PO" button to shipments list page (top action bar)
+- [x] Build PO import modal: file upload (PDF/image/DOCX), progress indicator, extracted data preview
+- [x] Allow user to review/edit extracted PO data before creating shipment
+- [x] Add "Generate COO" action button on each shipment row and shipment detail page
+- [x] Show COO status badge on shipment list (None / Draft / Issued)
+- [x] COO button opens COO form pre-filled with shipment data (exporter, consignee, goods, HTS, countries)
+
+### Frontend - COO Form ✅ COMPLETE (3/10/2026)
+- [x] Accept URL params: ?shipmentId=X to pre-fill from shipment
+- [x] Accept URL params: ?exporterCountry, ?destinationCountry, ?htsCode, ?goodsDescription
+- [x] Show "Linked to Shipment #XXXX" banner when pre-filled
+- [x] Auto-fill exporter/consignee from PO seller/buyer data when shipment has poData
+- [x] Add "Back to Shipment" navigation link when launched from shipment context
+- [x] COO generate/issue updates shipment cooStatus automatically
+
+### Tests ✅ COMPLETE (3/10/2026)
+- [x] Test PO extraction returns expected fields (4 tests)
+- [x] Test createFromPO pre-fills correct fields (4 tests)
+- [x] Test updateCooStatus updates shipment (2 tests)

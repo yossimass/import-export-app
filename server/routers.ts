@@ -3,7 +3,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
-import { invokeLLM } from "./_core/llm";
+import { invokeLLM, type Message } from "./_core/llm";
 import * as db from "./db";
 import { storagePut } from "./storage";
 
@@ -91,6 +91,160 @@ export const appRouter = router({
       .input(z.object({ shipmentId: z.number() }))
       .mutation(async ({ input }) => {
         await db.deleteShipment(input.shipmentId);
+        return { success: true };
+      }),
+
+    // ── Import Purchase Order: upload file URL, extract data via AI ──────────
+    importPO: protectedProcedure
+      .input(z.object({
+        fileUrl: z.string().url(),
+        fileName: z.string(),
+        mimeType: z.string(), // application/pdf, image/*, etc.
+      }))
+      .mutation(async ({ input }) => {
+        // Build message content based on file type
+        const isImage = input.mimeType.startsWith('image/');
+        const isPdf = input.mimeType === 'application/pdf';
+
+        const systemPrompt = `You are an expert trade document parser. Extract all structured data from the Purchase Order document provided. Return a JSON object with these fields (use null for missing fields):
+{
+  "poNumber": string,
+  "poDate": string (ISO date),
+  "buyerName": string,
+  "buyerAddress": string,
+  "sellerName": string,
+  "sellerAddress": string,
+  "shipToName": string,
+  "shipToAddress": string,
+  "incoterms": string (e.g. FOB, CIF, EXW),
+  "currency": string (3-letter ISO code),
+  "paymentTerms": string,
+  "deliveryDate": string (ISO date),
+  "totalValue": string,
+  "notes": string,
+  "lineItems": [
+    {
+      "lineNumber": number,
+      "description": string,
+      "quantity": string,
+      "unit": string,
+      "unitPrice": string,
+      "totalPrice": string,
+      "htsCode": string (if present),
+      "countryOfOrigin": string (3-letter ISO code if present)
+    }
+  ]
+}`;
+
+        const messages: Message[] = [];
+        messages.push({ role: 'system', content: systemPrompt });
+        if (isImage) {
+          messages.push({ role: 'user', content: [
+            { type: 'image_url', image_url: { url: input.fileUrl, detail: 'high' } },
+            { type: 'text', text: 'Extract all Purchase Order data from this document image.' }
+          ]});
+        } else if (isPdf) {
+          messages.push({ role: 'user', content: [
+            { type: 'file_url', file_url: { url: input.fileUrl, mime_type: 'application/pdf' } },
+            { type: 'text', text: 'Extract all Purchase Order data from this PDF document.' }
+          ]});
+        } else {
+          messages.push({ role: 'user', content: `Extract Purchase Order data from file: ${input.fileName}` });
+        }
+
+        const response = await invokeLLM({
+          messages,
+          response_format: { type: 'json_object' },
+        });
+
+        const raw = (response.choices[0]?.message?.content as string) || '{}';
+        let extracted: any = {};
+        try { extracted = JSON.parse(raw); } catch { extracted = {}; }
+
+        return {
+          ...extracted,
+          fileUrl: input.fileUrl,
+          extractedAt: new Date().toISOString(),
+        };
+      }),
+
+    // ── Create shipment pre-filled from PO extraction ─────────────────────────
+    createFromPO: protectedProcedure
+      .input(z.object({
+        poData: z.object({
+          poNumber: z.string().optional(),
+          poDate: z.string().optional(),
+          buyerName: z.string().optional(),
+          buyerAddress: z.string().optional(),
+          sellerName: z.string().optional(),
+          sellerAddress: z.string().optional(),
+          shipToName: z.string().optional(),
+          shipToAddress: z.string().optional(),
+          incoterms: z.string().optional(),
+          currency: z.string().optional(),
+          paymentTerms: z.string().optional(),
+          deliveryDate: z.string().optional(),
+          totalValue: z.string().optional(),
+          notes: z.string().optional(),
+          fileUrl: z.string().optional(),
+          extractedAt: z.string().optional(),
+          lineItems: z.array(z.object({
+            lineNumber: z.number().optional(),
+            description: z.string(),
+            quantity: z.string().optional(),
+            unit: z.string().optional(),
+            unitPrice: z.string().optional(),
+            totalPrice: z.string().optional(),
+            htsCode: z.string().optional(),
+            countryOfOrigin: z.string().optional(),
+          })).optional(),
+        }),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const po = input.poData;
+        // Derive shipment name from PO number or seller
+        const shipmentName = po.poNumber
+          ? `PO #${po.poNumber}${po.sellerName ? ` – ${po.sellerName}` : ''}`
+          : po.sellerName ? `Shipment from ${po.sellerName}` : 'Imported from PO';
+
+        // Use first line item for product description and HTS
+        const firstItem = po.lineItems?.[0];
+        const productDescription = po.lineItems
+          ? po.lineItems.map(li => li.description).join('; ')
+          : undefined;
+
+        const shipmentId = await db.createShipment({
+          userId: ctx.user.id,
+          shipmentName,
+          productDescription,
+          htsCode: firstItem?.htsCode,
+          originCountry: firstItem?.countryOfOrigin,
+          currency: po.currency || 'USD',
+          incoterm: po.incoterms,
+          value: po.totalValue ? (parseFloat(po.totalValue.replace(/[^0-9.]/g, '')) || undefined)?.toString() : undefined,
+          status: 'draft',
+          workflowStep: 1,
+          poData: {
+            ...po,
+            extractedAt: po.extractedAt || new Date().toISOString(),
+          },
+        });
+
+        return { shipmentId, shipmentName };
+      }),
+
+    // ── Update COO status on a shipment ───────────────────────────────────────
+    updateCooStatus: protectedProcedure
+      .input(z.object({
+        shipmentId: z.number(),
+        cooStatus: z.enum(['none', 'draft', 'issued']),
+        cooId: z.number().optional(),
+      }))
+      .mutation(async ({ input }) => {
+        await db.updateShipment(input.shipmentId, {
+          cooStatus: input.cooStatus,
+          cooId: input.cooId,
+        } as any);
         return { success: true };
       }),
   }),

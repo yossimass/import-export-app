@@ -205,9 +205,14 @@ export default function CertificateOfOrigin() {
   const [aiResult, setAiResult] = useState<any>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
-  // Read shipmentId from URL
-  const params = new URLSearchParams(window.location.search);
+  // Read URL params (from shipment workflow or PO import)
+  const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const shipmentId = params.get("shipmentId") ? Number(params.get("shipmentId")) : undefined;
+  // Direct URL param pre-fills (from MyShipments "Generate COO" button)
+  const urlExporterCountry = params.get("exporterCountry") || "";
+  const urlDestinationCountry = params.get("destinationCountry") || "";
+  const urlHtsCode = params.get("htsCode") || "";
+  const urlGoodsDescription = params.get("goodsDescription") ? decodeURIComponent(params.get("goodsDescription")!) : "";  
 
   // Get selected agreement definition
   const selectedAgreement = useMemo(
@@ -227,14 +232,37 @@ export default function CertificateOfOrigin() {
     { enabled: !!shipmentId }
   );
 
+  // Apply URL params on mount (before shipment loads)
+  useEffect(() => {
+    if (urlExporterCountry || urlDestinationCountry || urlHtsCode || urlGoodsDescription) {
+      setForm(prev => ({
+        ...prev,
+        exporterCountry: urlExporterCountry || prev.exporterCountry,
+        countryOfOrigin: urlExporterCountry || prev.countryOfOrigin,
+        destinationCountry: urlDestinationCountry || prev.destinationCountry,
+        htsCode: urlHtsCode || prev.htsCode,
+        goodsDescription: urlGoodsDescription || prev.goodsDescription,
+      }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Apply shipment data when loaded (overrides URL params with richer data)
   useEffect(() => {
     if (shipment) {
       setForm(prev => ({
         ...prev,
         htsCode: shipment.htsCode || prev.htsCode,
         countryOfOrigin: shipment.originCountry || prev.countryOfOrigin,
+        exporterCountry: shipment.originCountry || prev.exporterCountry,
         destinationCountry: shipment.destinationCountry || prev.destinationCountry,
         goodsDescription: shipment.productDescription || prev.goodsDescription,
+        // Pre-fill exporter from PO seller data if available
+        exporterName: (shipment as any).poData?.sellerName || prev.exporterName,
+        exporterAddress: (shipment as any).poData?.sellerAddress || prev.exporterAddress,
+        consigneeName: (shipment as any).poData?.buyerName || (shipment as any).poData?.shipToName || prev.consigneeName,
+        consigneeAddress: (shipment as any).poData?.buyerAddress || (shipment as any).poData?.shipToAddress || prev.consigneeAddress,
+        invoiceNumber: (shipment as any).poData?.poNumber ? `PO-${(shipment as any).poData.poNumber}` : prev.invoiceNumber,
       }));
     }
   }, [shipment]);
@@ -244,18 +272,37 @@ export default function CertificateOfOrigin() {
     setForm(prev => ({ ...prev, originCriterion: "", agreementFields: {} }));
   }, [form.tradeAgreement]);
 
+  const updateCooStatusMutation = trpc.shipments.updateCooStatus.useMutation();
+
   const generateMutation = trpc.certificate.generate.useMutation({
     onSuccess: (data) => {
       setGeneratedCert(data);
       setActiveSection("preview");
       toast.success(`Certificate ${data.certificateNumber} generated`);
+      // Update shipment COO status to 'draft'
+      if (shipmentId) {
+        updateCooStatusMutation.mutate({
+          shipmentId,
+          cooStatus: "draft",
+          cooId: data.certificateId,
+        });
+      }
     },
     onError: (err) => toast.error(`Failed to generate: ${err.message}`),
   });
-
   const issueMutation = trpc.certificate.issue.useMutation({
-    onSuccess: () => toast.success("Certificate issued"),
-  });
+    onSuccess: () => {
+      toast.success("Certificate issued");
+      // Update shipment COO status to 'issued'
+      if (shipmentId && generatedCert) {
+        updateCooStatusMutation.mutate({
+          shipmentId,
+          cooStatus: "issued",
+          cooId: generatedCert.certificateId,
+        });
+      }
+    },
+  });;
 
   const aiAssistMutation = trpc.certificate.aiAssist.useMutation({
     onSuccess: (data) => {
@@ -351,6 +398,33 @@ export default function CertificateOfOrigin() {
             </div>
           )}
         </div>
+
+        {/* Context banner: shown when launched from a shipment */}
+        {(shipmentId || urlExporterCountry || urlHtsCode) && (
+          <div className="mb-6 flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3">
+            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+            <div className="text-sm text-blue-800 flex-1">
+              {shipmentId ? (
+                <span>
+                  <strong>Linked to Shipment #{shipmentId}</strong>
+                  {shipment?.shipmentName ? ` — ${shipment.shipmentName}` : ""}
+                  {(shipment as any)?.poData?.poNumber ? ` (PO #${(shipment as any).poData.poNumber})` : ""}
+                  . Fields have been pre-filled from your shipment data.
+                </span>
+              ) : (
+                <span>Fields pre-filled from shipment data. Review and adjust as needed.</span>
+              )}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-blue-700 hover:text-blue-900 hover:bg-blue-100 shrink-0"
+              onClick={() => window.history.back()}
+            >
+              ← Back to Shipment
+            </Button>
+          </div>
+        )}
 
         {/* Tab switcher */}
         {generatedCert && (

@@ -1,0 +1,42 @@
+{
+  "query": "SHOW COLUMNS FROM shipments LIKE 'coo%'; SHOW COLUMNS FROM shipments LIKE 'poData';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway02.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 2Q61enYphS8Fhke.root --database i3ZE2S2eATooivdL4BmZxy --execute SHOW COLUMNS FROM shipments LIKE 'coo%'; SHOW COLUMNS FROM shipments LIKE 'poData';",
+  "rows": [
+    {
+      "Field": "cooStatus",
+      "Type": "enum('none','draft','issued')",
+      "Null": "NO",
+      "Key": "",
+      "Default": "none",
+      "Extra": ""
+    },
+    {
+      "Field": "cooId",
+      "Type": "int",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    },
+    {
+      "Field": "Field",
+      "Type": "Type",
+      "Null": "Null",
+      "Key": "Key",
+      "Default": "Default",
+      "Extra": "Extra"
+    },
+    {
+      "Field": "poData",
+      "Type": "json",
+      "Null": "YES",
+      "Key": "",
+      "Default": "NULL",
+      "Extra": ""
+    }
+  ],
+  "messages": [],
+  "stdout": "Field\tType\tNull\tKey\tDefault\tExtra\ncooStatus\tenum('none','draft','issued')\tNO\t\tnone\t\ncooId\tint\tYES\t\tNULL\t\nField\tType\tNull\tKey\tDefault\tExtra\npoData\tjson\tYES\t\tNULL\t\n",
+  "stderr": "",
+  "execution_time_ms": 107
+}

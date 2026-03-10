@@ -95,6 +95,40 @@ export const shipments = mysqlTable("shipments", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   completedAt: timestamp("completedAt"),
+
+  // Certificate of Origin linkage
+  cooStatus: mysqlEnum("cooStatus", ["none", "draft", "issued"]).default("none").notNull(),
+  cooId: int("cooId"),
+
+  // Purchase Order import data (extracted from uploaded PO)
+  poData: json("poData").$type<{
+    poNumber?: string;
+    poDate?: string;
+    buyerName?: string;
+    buyerAddress?: string;
+    sellerName?: string;
+    sellerAddress?: string;
+    shipToName?: string;
+    shipToAddress?: string;
+    incoterms?: string;
+    currency?: string;
+    paymentTerms?: string;
+    deliveryDate?: string;
+    lineItems?: Array<{
+      lineNumber?: number;
+      description: string;
+      quantity?: string;
+      unit?: string;
+      unitPrice?: string;
+      totalPrice?: string;
+      htsCode?: string;
+      countryOfOrigin?: string;
+    }>;
+    totalValue?: string;
+    notes?: string;
+    fileUrl?: string;
+    extractedAt?: string;
+  }>(),
 });
 
 export type Shipment = typeof shipments.$inferSelect;
