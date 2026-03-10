@@ -16,6 +16,8 @@ import Alerts from "./pages/Alerts";
 import MyShipments from "./pages/MyShipments";
 import Credits from "./pages/Credits";
 import CertificateOfOrigin from "./pages/CertificateOfOrigin";
+import AdminPanel from "./pages/AdminPanel";
+import Profile from "./pages/Profile";
 
 function Router() {
   return (
@@ -32,6 +34,8 @@ function Router() {
       <Route path={"/my-shipments"} component={MyShipments} />
       <Route path={"/credits"} component={Credits} />
       <Route path={"/certificate-of-origin"} component={CertificateOfOrigin} />
+      <Route path={"/admin"} component={AdminPanel} />
+      <Route path={"/profile"} component={Profile} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

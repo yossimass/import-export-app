@@ -360,3 +360,58 @@ export async function deleteCertificate(id: number): Promise<void> {
   if (!db) throw new Error("Database not available");
   await db.delete(certificates).where(eq(certificates.id, id));
 }
+
+// ============================================================================
+// ADMIN - USER MANAGEMENT
+// ============================================================================
+
+export async function getAllUsers(limit: number = 100, offset: number = 0) {
+  const db = await getDb();
+  if (!db) return [];
+  return await db.select().from(users).orderBy(desc(users.createdAt)).limit(limit).offset(offset);
+}
+
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function updateUserRole(userId: number, role: "user" | "admin"): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ role }).where(eq(users.id, userId));
+}
+
+export async function updateUserCredits(userId: number, credits: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ credits }).where(eq(users.id, userId));
+}
+
+export async function getAdminStats() {
+  const db = await getDb();
+  if (!db) return { totalUsers: 0, totalShipments: 0, totalCertificates: 0, totalCreditsIssued: 0, adminCount: 0 };
+  const [userRows, shipmentRows, certRows] = await Promise.all([
+    db.select().from(users),
+    db.select().from(shipments),
+    db.select().from(certificates),
+  ]);
+  const totalCreditsIssued = userRows.reduce((sum, u) => sum + parseFloat(u.credits || "0"), 0);
+  const adminCount = userRows.filter(u => u.role === "admin").length;
+  return {
+    totalUsers: userRows.length,
+    totalShipments: shipmentRows.length,
+    totalCertificates: certRows.length,
+    totalCreditsIssued,
+    adminCount,
+  };
+}

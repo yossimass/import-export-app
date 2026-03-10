@@ -2,6 +2,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { invokeLLM, type Message } from "./_core/llm";
 import * as db from "./db";
@@ -1226,6 +1227,111 @@ Return JSON with this EXACT structure:
       .mutation(async ({ input }) => {
         await db.deleteCertificate(input.certificateId);
         return { success: true };
+      }),
+  }),
+
+  // ============================================================================
+  // ADMIN PANEL
+  // ============================================================================
+  admin: router({
+    getStats: protectedProcedure
+      .query(async ({ ctx }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        return await db.getAdminStats();
+      }),
+
+    listUsers: protectedProcedure
+      .input(z.object({
+        limit: z.number().optional().default(50),
+        offset: z.number().optional().default(0),
+        search: z.string().optional(),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        const allUsers = await db.getAllUsers(input.limit, input.offset);
+        if (input.search) {
+          const q = input.search.toLowerCase();
+          return allUsers.filter(u =>
+            u.name?.toLowerCase().includes(q) ||
+            u.email?.toLowerCase().includes(q) ||
+            String(u.id).includes(q)
+          );
+        }
+        return allUsers;
+      }),
+
+    getUser: protectedProcedure
+      .input(z.object({ userId: z.number() }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        const user = await db.getUserById(input.userId);
+        if (!user) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        const [userShipments, userCerts, userTxns] = await Promise.all([
+          db.getUserShipments(input.userId),
+          db.getUserCertificates(input.userId),
+          db.getCreditTransactions(input.userId, 20, 0),
+        ]);
+        return {
+          ...user,
+          shipmentCount: userShipments.length,
+          certificateCount: userCerts.length,
+          recentTransactions: userTxns,
+        };
+      }),
+
+    updateRole: protectedProcedure
+      .input(z.object({
+        userId: z.number(),
+        role: z.enum(['user', 'admin']),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        if (input.userId === ctx.user.id) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Cannot change your own role' });
+        await db.updateUserRole(input.userId, input.role);
+        return { success: true };
+      }),
+
+    adjustCredits: protectedProcedure
+      .input(z.object({
+        userId: z.number(),
+        amount: z.number().positive(),
+        direction: z.enum(['add', 'deduct']),
+        reason: z.string().min(1),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        const { addCredits, deductCredits } = await import('./credits');
+        const targetUser = await db.getUserById(input.userId);
+        if (!targetUser) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
+        if (input.direction === 'add') {
+          await addCredits(input.userId, input.amount, 'admin_adjustment', input.reason);
+        } else {
+          const currentBalance = parseFloat(targetUser.credits || '0');
+          if (currentBalance < input.amount) throw new TRPCError({ code: 'BAD_REQUEST', message: 'User has insufficient credits' });
+          // Directly update credits for admin deductions (bypass feature-based deductCredits)
+          const { sql } = await import('drizzle-orm');
+          const { users } = await import('../drizzle/schema');
+          const { getDb } = await import('./db');
+          const dbConn = await getDb();
+          if (dbConn) {
+            await dbConn.update(users).set({ credits: sql`credits - ${input.amount}` }).where(sql`id = ${input.userId}`);
+          }
+          // Log the transaction
+          await addCredits(input.userId, -input.amount, 'admin_adjustment', `[DEDUCT] ${input.reason}`);
+        }
+        const updated = await db.getUserById(input.userId);
+        return { success: true, newBalance: updated?.credits || '0' };
+      }),
+
+    getUserTransactions: protectedProcedure
+      .input(z.object({
+        userId: z.number(),
+        limit: z.number().optional().default(50),
+        offset: z.number().optional().default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
+        return await db.getCreditTransactions(input.userId, input.limit, input.offset);
       }),
   }),
 });
