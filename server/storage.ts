@@ -1,70 +1,29 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+// File storage.
+// - On Netlify (or anywhere Netlify Blobs credentials are present) files go to
+//   a Netlify Blobs store and are served through the authenticated
+//   /api/files/* route.
+// - If BUILT_IN_FORGE_API_URL/KEY are set (legacy Manus hosting), the Manus
+//   storage proxy is used instead.
 
+import { getStore } from "@netlify/blobs";
 import { ENV } from './_core/env';
 
-type StorageConfig = { baseUrl: string; apiKey: string };
+const BLOB_STORE = "uploads";
 
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(
-  baseUrl: string,
-  relKey: string,
-  apiKey: string
-): Promise<string> {
-  const downloadApiUrl = new URL(
-    "v1/storage/downloadUrl",
-    ensureTrailingSlash(baseUrl)
-  );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
-  });
-  return (await response.json()).url;
-}
-
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
+function useForge() {
+  return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey && !process.env.NETLIFY);
 }
 
 function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
 }
 
-function toFormData(
-  data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string
-): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
+function ensureTrailingSlash(value: string): string {
+  return value.endsWith("/") ? value : `${value}/`;
 }
 
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
+export function fileUrlForKey(key: string): string {
+  return `/api/files/${key.split("/").map(encodeURIComponent).join("/")}`;
 }
 
 export async function storagePut(
@@ -72,14 +31,25 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
   const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
+
+  if (!useForge()) {
+    const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+    // Copy into a standalone ArrayBuffer (Buffers may be views into a shared pool)
+    const body = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    await getStore(BLOB_STORE).set(key, body, { metadata: { contentType } });
+    return { key, url: fileUrlForKey(key) };
+  }
+
+  const baseUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
+  const uploadUrl = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
+  uploadUrl.searchParams.set("path", key);
+  const form = new FormData();
+  form.append("file", new Blob([data as any], { type: contentType }), key.split("/").pop() ?? key);
   const response = await fetch(uploadUrl, {
     method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
+    headers: { Authorization: `Bearer ${ENV.forgeApiKey}` },
+    body: form,
   });
 
   if (!response.ok) {
@@ -92,11 +62,19 @@ export async function storagePut(
   return { key, url };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
-  const key = normalizeKey(relKey);
+/** Read a stored file's bytes (Netlify Blobs only). */
+export async function storageRead(
+  relKey: string
+): Promise<{ data: ArrayBuffer; contentType: string } | null> {
+  const result = await getStore(BLOB_STORE).getWithMetadata(normalizeKey(relKey), { type: "arrayBuffer" });
+  if (!result) return null;
   return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
+    data: result.data,
+    contentType: (result.metadata?.contentType as string) || "application/octet-stream",
   };
+}
+
+export async function storageDelete(relKey: string): Promise<void> {
+  if (useForge()) return; // Manus proxy has no delete endpoint
+  await getStore(BLOB_STORE).delete(normalizeKey(relKey));
 }

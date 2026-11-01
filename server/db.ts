@@ -1,14 +1,17 @@
-import { eq, desc } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { and, count, desc, eq, gte } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { InsertUser, users, shipments, documents, alerts, chatMessages, InsertShipment, Shipment, InsertDocument, Document, certificates, InsertCertificate, Certificate } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db && ENV.databaseUrl) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Small pool per serverless instance; prepare:false keeps it compatible
+      // with transaction-mode poolers (Neon/Netlify DB pooled URLs, PgBouncer)
+      _db = drizzle(postgres(ENV.databaseUrl, { max: 3, prepare: false }));
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -71,13 +74,21 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
     console.error("[Database] Failed to upsert user:", error);
     throw error;
   }
+}
+
+/** Point an existing user row at a new identity-provider id (used when migrating logins). */
+export async function relinkUserOpenId(userId: number, openId: string): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(users).set({ openId }).where(eq(users.id, userId));
 }
 
 export async function getUserByOpenId(openId: string) {
@@ -99,8 +110,8 @@ export async function createShipment(data: InsertShipment): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(shipments).values(data);
-  return Number(result[0].insertId);
+  const [row] = await db.insert(shipments).values(data).returning({ id: shipments.id });
+  return row.id;
 }
 
 export async function getShipmentById(id: number): Promise<Shipment | undefined> {
@@ -137,11 +148,11 @@ export async function updateShipment(id: number, data: Partial<Shipment>): Promi
   await db.update(shipments).set(data).where(eq(shipments.id, id));
 }
 
-export async function deleteShipment(id: number): Promise<void> {
+export async function deleteShipment(id: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.delete(shipments).where(eq(shipments.id, id));
+  await db.delete(shipments).where(and(eq(shipments.id, id), eq(shipments.userId, userId)));
 }
 
 // ============================================================================
@@ -152,8 +163,8 @@ export async function createDocument(data: InsertDocument): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(documents).values(data);
-  return Number(result[0].insertId);
+  const [row] = await db.insert(documents).values(data).returning({ id: documents.id });
+  return row.id;
 }
 
 export async function getShipmentDocuments(shipmentId: number): Promise<Document[]> {
@@ -174,11 +185,14 @@ export async function getUserDocuments(userId: number): Promise<Document[]> {
     .orderBy(desc(documents.uploadedAt));
 }
 
-export async function deleteDocument(id: number): Promise<void> {
+export async function deleteDocument(id: number, userId: number): Promise<Document | undefined> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.delete(documents).where(eq(documents.id, id));
+  const where = and(eq(documents.id, id), eq(documents.userId, userId));
+  const [doc] = await db.select().from(documents).where(where).limit(1);
+  if (doc) await db.delete(documents).where(where);
+  return doc;
 }
 
 // ============================================================================
@@ -196,11 +210,11 @@ export async function createAlert(userId: number, data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(alerts).values({
+  const [row] = await db.insert(alerts).values({
     userId,
     ...data,
-  });
-  return Number(result[0].insertId);
+  }).returning({ id: alerts.id });
+  return row.id;
 }
 
 export async function getUserAlerts(userId: number): Promise<typeof alerts.$inferSelect[]> {
@@ -212,11 +226,11 @@ export async function getUserAlerts(userId: number): Promise<typeof alerts.$infe
     .orderBy(desc(alerts.createdAt));
 }
 
-export async function deleteAlert(id: number): Promise<void> {
+export async function deleteAlert(id: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.delete(alerts).where(eq(alerts.id, id));
+  await db.delete(alerts).where(and(eq(alerts.id, id), eq(alerts.userId, userId)));
 }
 
 // ============================================================================
@@ -240,7 +254,7 @@ export async function getChatHistory(userId: number, conversationId: string): Pr
   if (!db) return [];
 
   return await db.select().from(chatMessages)
-    .where(eq(chatMessages.userId, userId))
+    .where(and(eq(chatMessages.userId, userId), eq(chatMessages.conversationId, conversationId)))
     .orderBy(chatMessages.createdAt);
 }
 
@@ -266,18 +280,17 @@ export async function getCreditUsageStats(userId: number, days: number = 30) {
   if (!db) return { totalSpent: 0, byFeature: {}, byDay: [] };
 
   const { creditTransactions } = await import("../drizzle/schema");
-  const { sql } = await import("drizzle-orm");
-  
+
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
 
   // Get all usage transactions in the time period
   const transactions = await db.select().from(creditTransactions)
-    .where(
-      sql`${creditTransactions.userId} = ${userId} 
-          AND ${creditTransactions.type} = 'usage' 
-          AND ${creditTransactions.createdAt} >= ${cutoffDate}`
-    )
+    .where(and(
+      eq(creditTransactions.userId, userId),
+      eq(creditTransactions.type, "usage"),
+      gte(creditTransactions.createdAt, cutoffDate),
+    ))
     .orderBy(creditTransactions.createdAt);
 
   // Calculate total spent
@@ -320,8 +333,8 @@ export async function getCreditUsageStats(userId: number, days: number = 30) {
 export async function createCertificate(data: InsertCertificate): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(certificates).values(data);
-  return Number(result[0].insertId);
+  const [row] = await db.insert(certificates).values(data).returning({ id: certificates.id });
+  return row.id;
 }
 
 export async function getCertificateById(id: number): Promise<Certificate | undefined> {
@@ -355,10 +368,10 @@ export async function updateCertificate(id: number, data: Partial<InsertCertific
   await db.update(certificates).set(data as any).where(eq(certificates.id, id));
 }
 
-export async function deleteCertificate(id: number): Promise<void> {
+export async function deleteCertificate(id: number, userId: number): Promise<void> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(certificates).where(eq(certificates.id, id));
+  await db.delete(certificates).where(and(eq(certificates.id, id), eq(certificates.userId, userId)));
 }
 
 // ============================================================================
@@ -400,18 +413,22 @@ export async function updateUserCredits(userId: number, credits: string): Promis
 export async function getAdminStats() {
   const db = await getDb();
   if (!db) return { totalUsers: 0, totalShipments: 0, totalCertificates: 0, totalCreditsIssued: 0, adminCount: 0 };
-  const [userRows, shipmentRows, certRows] = await Promise.all([
-    db.select().from(users),
-    db.select().from(shipments),
-    db.select().from(certificates),
+  const { sql } = await import("drizzle-orm");
+  // Aggregate in SQL instead of loading every row into memory
+  const [[userAgg], [shipmentAgg], [certAgg]] = await Promise.all([
+    db.select({
+      total: count(),
+      admins: count(sql`CASE WHEN ${users.role} = 'admin' THEN 1 END`),
+      credits: sql<string>`COALESCE(SUM(${users.credits}), 0)`,
+    }).from(users),
+    db.select({ total: count() }).from(shipments),
+    db.select({ total: count() }).from(certificates),
   ]);
-  const totalCreditsIssued = userRows.reduce((sum, u) => sum + parseFloat(u.credits || "0"), 0);
-  const adminCount = userRows.filter(u => u.role === "admin").length;
   return {
-    totalUsers: userRows.length,
-    totalShipments: shipmentRows.length,
-    totalCertificates: certRows.length,
-    totalCreditsIssued,
-    adminCount,
+    totalUsers: Number(userAgg?.total ?? 0),
+    totalShipments: Number(shipmentAgg?.total ?? 0),
+    totalCertificates: Number(certAgg?.total ?? 0),
+    totalCreditsIssued: parseFloat(userAgg?.credits ?? "0"),
+    adminCount: Number(userAgg?.admins ?? 0),
   };
 }

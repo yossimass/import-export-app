@@ -178,7 +178,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
   const uploadDocMutation = trpc.documents.upload.useMutation();
 
   const handleFile = useCallback(async (file: File) => {
-    const MAX_MB = 16;
+    const MAX_MB = 4; // Netlify function body limit is 6MB after base64 encoding
     if (file.size > MAX_MB * 1024 * 1024) {
       setErrorMsg(`File too large. Maximum size is ${MAX_MB}MB.`);
       setStep("error");
@@ -281,7 +281,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <p className="text-lg font-semibold mb-1">Drop your PO here</p>
             <p className="text-sm text-muted-foreground mb-4">
-              Supports PDF, PNG, JPG, WEBP, TIFF — up to 16MB
+              Supports PDF, PNG, JPG, WEBP, TIFF — up to 4MB
             </p>
             <Button variant="outline" onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}>
               Browse Files

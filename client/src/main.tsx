@@ -1,4 +1,6 @@
 import { trpc } from "@/lib/trpc";
+import { ClerkLoaded, ClerkProvider, useAuth } from "@clerk/react";
+import { useEffect } from "react";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink, TRPCClientError } from "@trpc/client";
@@ -8,7 +10,17 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+// Many queries trigger paid LLM calls server-side; don't silently re-run them
+// on window focus or remount.
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: false,
+      staleTime: 5 * 60 * 1000,
+      retry: 1,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;
@@ -17,6 +29,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
   if (!isUnauthorized) return;
+  if (window.location.pathname.startsWith("/sign-in")) return;
 
   window.location.href = getLoginUrl();
 };
@@ -37,14 +50,31 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
+// Set by ClerkTokenBridge so the tRPC client can attach the current session token
+let getSessionToken: () => Promise<string | null> = async () => null;
+
+function ClerkTokenBridge() {
+  const { getToken, isLoaded, userId } = useAuth();
+  getSessionToken = getToken;
+  // Refetch everything when the signed-in user changes (sign in / sign out)
+  useEffect(() => {
+    if (isLoaded) queryClient.invalidateQueries();
+  }, [isLoaded, userId]);
+  return null;
+}
+
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      fetch(input, init) {
+      async fetch(input, init) {
+        const token = await getSessionToken();
+        const headers = new Headers(init?.headers);
+        if (token) headers.set("Authorization", `Bearer ${token}`);
         return globalThis.fetch(input, {
           ...(init ?? {}),
+          headers,
           credentials: "include",
         });
       },
@@ -52,10 +82,25 @@ const trpcClient = trpc.createClient({
   ],
 });
 
+const clerkPublishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+if (!clerkPublishableKey) {
+  throw new Error("VITE_CLERK_PUBLISHABLE_KEY is not set");
+}
+
 createRoot(document.getElementById("root")!).render(
-  <trpc.Provider client={trpcClient} queryClient={queryClient}>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </trpc.Provider>
+  <ClerkProvider
+    publishableKey={clerkPublishableKey}
+    signInUrl="/sign-in"
+    signUpUrl="/sign-up"
+    afterSignOutUrl="/"
+  >
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <QueryClientProvider client={queryClient}>
+        <ClerkTokenBridge />
+        <ClerkLoaded>
+          <App />
+        </ClerkLoaded>
+      </QueryClientProvider>
+    </trpc.Provider>
+  </ClerkProvider>
 );

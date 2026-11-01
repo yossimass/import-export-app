@@ -1,22 +1,52 @@
-import { COOKIE_NAME } from "@shared/const";
-import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { invokeLLM, type Message } from "./_core/llm";
 import * as db from "./db";
-import { storagePut } from "./storage";
+import { storageDelete, storagePut, storageRead } from "./storage";
+import * as trade from "./tradeData";
+import type { User } from "../drizzle/schema";
+
+// LLM cache lifetimes: identical prompts within this window reuse the stored answer
+const CACHE_WEEK = 7 * 86400;
+const CACHE_MONTH = 30 * 86400;
+
+/** Load a shipment and verify the caller owns it (admins may access any). */
+async function getOwnedShipment(user: User, shipmentId: number) {
+  const shipment = await db.getShipmentById(shipmentId);
+  if (!shipment || (shipment.userId !== user.id && user.role !== "admin")) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Shipment not found" });
+  }
+  return shipment;
+}
+
+async function getOwnedCertificate(user: User, certificateId: number) {
+  const cert = await db.getCertificateById(certificateId);
+  if (!cert || (cert.userId !== user.id && user.role !== "admin")) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "Certificate not found" });
+  }
+  return cert;
+}
+
+/** Turn an /api/files/<key> URL into a data: URL so external LLMs can read it. */
+async function inlineStoredFile(user: User, fileUrl: string): Promise<string> {
+  if (!fileUrl.startsWith("/api/files/")) return fileUrl;
+  const key = decodeURIComponent(fileUrl.slice("/api/files/".length));
+  if (!key.startsWith(`${user.id}/`)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "File not accessible" });
+  }
+  const file = await storageRead(key);
+  if (!file) throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
+  return `data:${file.contentType};base64,${Buffer.from(file.data).toString("base64")}`;
+}
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: protectedProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
-      return { success: true } as const;
-    }),
+    // Sessions are owned by Clerk; the client signs out via Clerk. Kept for API compatibility.
+    logout: protectedProcedure.mutation(() => ({ success: true } as const)),
   }),
 
   // ============================================================================
@@ -43,8 +73,8 @@ export const appRouter = router({
 
     get: protectedProcedure
       .input(z.object({ shipmentId: z.number() }))
-      .query(async ({ input }) => {
-        return await db.getShipmentById(input.shipmentId);
+      .query(async ({ ctx, input }) => {
+        return await getOwnedShipment(ctx.user, input.shipmentId);
       }),
 
     list: protectedProcedure
@@ -83,26 +113,28 @@ export const appRouter = router({
           riskLevel: z.enum(["low", "medium", "high"]).optional(),
         }),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        await getOwnedShipment(ctx.user, input.shipmentId);
         await db.updateShipment(input.shipmentId, input.data as any);
         return { success: true };
       }),
 
     delete: protectedProcedure
       .input(z.object({ shipmentId: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteShipment(input.shipmentId);
+      .mutation(async ({ ctx, input }) => {
+        await db.deleteShipment(input.shipmentId, ctx.user.id);
         return { success: true };
       }),
 
     // ── Import Purchase Order: upload file URL, extract data via AI ──────────
     importPO: protectedProcedure
       .input(z.object({
-        fileUrl: z.string().url(),
+        fileUrl: z.string().min(1), // absolute URL or /api/files/<key>
         fileName: z.string(),
         mimeType: z.string(), // application/pdf, image/*, etc.
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        const llmFileUrl = await inlineStoredFile(ctx.user, input.fileUrl);
         // Build message content based on file type
         const isImage = input.mimeType.startsWith('image/');
         const isPdf = input.mimeType === 'application/pdf';
@@ -141,12 +173,12 @@ export const appRouter = router({
         messages.push({ role: 'system', content: systemPrompt });
         if (isImage) {
           messages.push({ role: 'user', content: [
-            { type: 'image_url', image_url: { url: input.fileUrl, detail: 'high' } },
+            { type: 'image_url', image_url: { url: llmFileUrl, detail: 'high' } },
             { type: 'text', text: 'Extract all Purchase Order data from this document image.' }
           ]});
         } else if (isPdf) {
           messages.push({ role: 'user', content: [
-            { type: 'file_url', file_url: { url: input.fileUrl, mime_type: 'application/pdf' } },
+            { type: 'file_url', file_url: { url: llmFileUrl, mime_type: 'application/pdf' } },
             { type: 'text', text: 'Extract all Purchase Order data from this PDF document.' }
           ]});
         } else {
@@ -241,7 +273,8 @@ export const appRouter = router({
         cooStatus: z.enum(['none', 'draft', 'issued']),
         cooId: z.number().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        await getOwnedShipment(ctx.user, input.shipmentId);
         await db.updateShipment(input.shipmentId, {
           cooStatus: input.cooStatus,
           cooId: input.cooId,
@@ -261,9 +294,26 @@ export const appRouter = router({
         shipmentId: z.number().optional(), // Link to workflow
       }))
       .query(async ({ input }) => {
+        // HTS codes are looked up directly in the official schedule — no LLM needed
+        if (trade.looksLikeHtsCode(input.query)) {
+          const line = await trade.lookupHts(input.query).catch(() => null);
+          if (!line) return [];
+          return [{
+            code: line.code,
+            description: line.description,
+            dutyRate: line.general || "varies",
+            riskLevel: "low",
+            reasoning: "Exact match from the USITC Harmonized Tariff Schedule.",
+            alternatives: [],
+            confidence: 1,
+          }];
+        }
+
         try {
-          console.log('[HTS Search] Starting search for:', input.query);
+          const query = input.query.trim().toLowerCase();
           const response = await invokeLLM({
+          cacheTtlSeconds: CACHE_MONTH,
+          maxTokens: 2048,
           messages: [
             {
               role: "system",
@@ -285,23 +335,20 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
             },
             {
               role: "user",
-              content: `Classify this product for US import: "${input.query}". Return ${input.limit || 5} HTS codes ranked by accuracy. Include 2025 MFN duty rates, Section 301 considerations if from China, and alternative classifications.`
+              content: `Classify this product for US import: "${query}". Return ${input.limit || 5} HTS codes ranked by accuracy. Include 2025 MFN duty rates, Section 301 considerations if from China, and alternative classifications.`
             }
           ],
           response_format: { type: "json_object" }
         });
 
         const content = response.choices[0]?.message?.content;
-        console.log('[HTS Search] AI returned:', typeof content, content ? String(content).substring(0, 200) : 'null');
         if (!content) {
           console.warn('[HTS Search] No content returned');
           return [];
         }
 
         const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        console.log('[HTS Search] Parsed keys:', Object.keys(parsed));
         let results = parsed.results || parsed.codes || parsed.items || [];
-        console.log('[HTS Search] Found', results.length, 'results');
 
         // If AI returns no results, use intelligent fallback based on query
         if (!results || results.length === 0) {
@@ -334,14 +381,21 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
           }
         }
 
-        return results.map((item: any) => ({
-          code: item.code || item.htsCode || "",
-          description: item.description || "",
-          dutyRate: item.dutyRate || item.rate || "varies",
+        // Replace AI-guessed duty rates with official USITC rates where possible
+        const official = await Promise.all(
+          results.map((item: any) =>
+            trade.lookupHts(item.code || item.htsCode || "", 3000).catch(() => null)
+          )
+        );
+
+        return results.map((item: any, i: number) => ({
+          code: official[i]?.code || item.code || item.htsCode || "",
+          description: item.description || official[i]?.description || "",
+          dutyRate: official[i]?.general || item.dutyRate || item.rate || "varies",
           riskLevel: item.riskLevel || item.risk || "medium",
           reasoning: item.reasoning || item.rationale || "AI-generated match",
           alternatives: item.alternatives || [],
-          confidence: item.confidence || 0.85,
+          confidence: official[i] ? (item.confidence || 0.85) : Math.min(item.confidence || 0.5, 0.5),
         }));
         } catch (error) {
           console.error('[HTS Search] Error:', error);
@@ -356,6 +410,7 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
       }))
       .mutation(async ({ input }) => {
         const response = await invokeLLM({
+          cacheTtlSeconds: CACHE_MONTH,
           messages: [
             {
               role: "system",
@@ -399,9 +454,42 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
         incoterm: z.string().optional(),
         freightCost: z.number().optional(),
         insuranceCost: z.number().optional(),
+        additionalDutyRate: z.number().min(0).max(500).optional(), // % (Section 301/232 etc.)
         shipmentId: z.number().optional(), // Link to workflow
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        if (input.shipmentId) await getOwnedShipment(ctx.user, input.shipmentId);
+
+        // US imports: compute from official HTS rates, no LLM
+        if (input.destinationCountry.toUpperCase() === "USA") {
+          let result;
+          try {
+            result = await trade.calculateUsTariff(input);
+          } catch (error) {
+            console.error("[Tariff] USITC lookup failed", error);
+            throw new TRPCError({ code: "BAD_GATEWAY", message: "Tariff schedule service is unavailable. Please try again." });
+          }
+          if (!result) {
+            throw new TRPCError({ code: "BAD_REQUEST", message: `HTS code ${input.htsCode} was not found in the US tariff schedule` });
+          }
+          if (input.shipmentId) {
+            await db.updateShipment(input.shipmentId, {
+              lastCalculation: {
+                appliedRate: result.appliedRate,
+                dutyAmount: result.dutyAmount,
+                landedCost: result.landedCost,
+                tradeAgreement: result.tradeAgreement,
+                rationale: result.rationale,
+                calculatedAt: new Date().toISOString(),
+              },
+              workflowStep: 2,
+              status: "calculating",
+            });
+          }
+          return result;
+        }
+
+        // Non-US destinations: fall back to the LLM (cached)
         const prompt = `Calculate import duties for:
 
 HTS Code: ${input.htsCode}
@@ -432,6 +520,7 @@ Return JSON with these EXACT fields:
 Use CURRENT 2025/2026 rates. For China to USA, include Section 301 tariffs if applicable. Calculate exact amounts.`;
 
         const response = await invokeLLM({
+          cacheTtlSeconds: CACHE_WEEK,
           messages: [
             {
               role: "system",
@@ -512,7 +601,8 @@ Use CURRENT 2025/2026 rates. For China to USA, include Section 301 tariffs if ap
           totalDuties: parsed.totalDuties || parsed.dutyAmount || 0,
           landedCost: parsed.landedCost || input.value,
           rateSource: parsed.rateSource || "CBP HTS 2025",
-          rationale: parsed.rationale || "AI-generated calculation",
+          rationale: parsed.rationale || parsed.explanation || "AI-generated calculation",
+          explanation: parsed.explanation || parsed.rationale || "AI-generated calculation",
           alternatives: parsed.alternatives || [],
           effectiveDate: parsed.effectiveDate || new Date().toISOString(),
         };
@@ -558,6 +648,7 @@ Return JSON with this EXACT structure:
 Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/2026 regulations.`;
 
         const response = await invokeLLM({
+          cacheTtlSeconds: CACHE_WEEK,
           messages: [
             {
               role: "system",
@@ -592,8 +683,10 @@ Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/202
         shipmentId: z.number().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        if (input.shipmentId) await getOwnedShipment(ctx.user, input.shipmentId);
         const buffer = Buffer.from(input.fileData, 'base64');
-        const fileKey = `${ctx.user.id}/documents/${Date.now()}-${input.fileName}`;
+        const safeName = input.fileName.replace(/[^\w.\-]+/g, "_");
+        const fileKey = `${ctx.user.id}/documents/${Date.now()}-${safeName}`;
         
         const { url } = await storagePut(fileKey, buffer, input.mimeType);
 
@@ -624,6 +717,7 @@ Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/202
       .input(z.object({ shipmentId: z.number().optional() }))
       .query(async ({ ctx, input }) => {
         if (input.shipmentId) {
+          await getOwnedShipment(ctx.user, input.shipmentId);
           return await db.getShipmentDocuments(input.shipmentId);
         }
         return await db.getUserDocuments(ctx.user.id);
@@ -631,8 +725,9 @@ Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/202
 
     delete: protectedProcedure
       .input(z.object({ documentId: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteDocument(input.documentId);
+      .mutation(async ({ ctx, input }) => {
+        const doc = await db.deleteDocument(input.documentId, ctx.user.id);
+        if (doc) await storageDelete(doc.fileKey).catch(err => console.warn("[Documents] Blob delete failed", err));
         return { success: true };
       }),
   }),
@@ -650,7 +745,8 @@ Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/202
         productCategory: z.string(),
         htsCode: z.string().optional(),
       }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        await getOwnedShipment(ctx.user, input.shipmentId);
         const prompt = `Generate compliance checklist for:
 
 Type: ${input.shipmentType}
@@ -680,6 +776,7 @@ Return JSON with this EXACT structure:
 Provide 8-15 actionable checklist items covering documentation, compliance, inspections, and payments.`;
 
         const response = await invokeLLM({
+          cacheTtlSeconds: CACHE_WEEK,
           messages: [
             {
               role: "system",
@@ -720,9 +817,9 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
     
     get: protectedProcedure
       .input(z.object({ shipmentId: z.number() }))
-      .query(async ({ input }) => {
-        const shipment = await db.getShipmentById(input.shipmentId);
-        if (!shipment || !shipment.complianceChecklist) {
+      .query(async ({ ctx, input }) => {
+        const shipment = await getOwnedShipment(ctx.user, input.shipmentId);
+        if (!shipment.complianceChecklist) {
           return null;
         }
         return {
@@ -738,9 +835,9 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
         itemIndex: z.number(),
         completed: z.boolean(),
       }))
-      .mutation(async ({ input }) => {
-        const shipment = await db.getShipmentById(input.shipmentId);
-        if (!shipment || !shipment.complianceChecklist) {
+      .mutation(async ({ ctx, input }) => {
+        const shipment = await getOwnedShipment(ctx.user, input.shipmentId);
+        if (!shipment.complianceChecklist) {
           throw new Error("Checklist not found");
         }
         
@@ -767,66 +864,29 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
     convertCurrency: protectedProcedure
       .input(z.object({
         amount: z.number(),
-        from: z.string(),
-        to: z.string(),
+        from: z.string().length(3),
+        to: z.string().length(3),
       }))
       .query(async ({ input }) => {
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: "You are a currency exchange expert with current market rates."
-            },
-            {
-              role: "user",
-              content: `Convert ${input.amount} ${input.from} to ${input.to}. Provide exchange rate and converted amount as JSON.`
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) throw new Error("Conversion failed");
-
-        const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        return {
-          convertedAmount: parsed.convertedAmount || parsed.amount || 0,
-          exchangeRate: parsed.exchangeRate || parsed.rate || 1,
-          timestamp: new Date().toISOString(),
-        };
+        try {
+          return await trade.convertCurrency(input.amount, input.from, input.to);
+        } catch (error: any) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: error?.message || "Conversion failed" });
+        }
       }),
 
     estimateShipping: protectedProcedure
       .input(z.object({
         originCountry: z.string(),
         destinationCountry: z.string(),
-        weight: z.number(),
+        weight: z.number().positive(),
         dimensions: z.object({
           length: z.number(),
           width: z.number(),
           height: z.number(),
         }).optional(),
       }))
-      .query(async ({ input }) => {
-        const response = await invokeLLM({
-          messages: [
-            {
-              role: "system",
-              content: "You are a logistics expert who estimates shipping costs."
-            },
-            {
-              role: "user",
-              content: `Estimate shipping cost from ${input.originCountry} to ${input.destinationCountry} for ${input.weight}kg. Provide estimates for air, sea, and express as JSON.`
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) throw new Error("Estimation failed");
-
-        return JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-      }),
+      .query(({ input }) => trade.estimateShipping(input)),
   }),
 
   // ============================================================================
@@ -858,8 +918,8 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
 
     delete: protectedProcedure
       .input(z.object({ alertId: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteAlert(input.alertId);
+      .mutation(async ({ ctx, input }) => {
+        await db.deleteAlert(input.alertId, ctx.user.id);
         return { success: true };
       }),
   }),
@@ -905,7 +965,7 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
   chat: router({
     send: protectedProcedure
       .input(z.object({
-        message: z.string(),
+        message: z.string().min(1).max(4000),
         conversationId: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
@@ -916,6 +976,7 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
 
         // Get AI response
         const response = await invokeLLM({
+          maxTokens: 1500,
           messages: [
             {
               role: "system",
@@ -995,6 +1056,7 @@ Provide expert guidance. Return JSON with this EXACT structure:
 }`;
 
         const aiResponse = await invokeLLM({
+          cacheTtlSeconds: CACHE_MONTH,
           messages: [
             { role: "system", content: "You are a trade compliance expert. Return only valid JSON." },
             { role: "user", content: prompt }
@@ -1080,64 +1142,13 @@ Provide expert guidance. Return JSON with this EXACT structure:
         agreementFields: z.record(z.string(), z.string()).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        if (input.shipmentId) await getOwnedShipment(ctx.user, input.shipmentId);
         const { getAgreementById } = await import("../shared/tradeAgreements.js");
         const agreement = getAgreementById(input.tradeAgreement);
-        const agreementName = agreement?.name || input.tradeAgreement;
-        const criteriaList = agreement?.originCriteria
-          .map(c => `${c.value}: ${c.label} — ${c.description}`)
-          .join("\n") || "";
 
-        // AI validation tailored to the selected trade agreement
-        const validationPrompt = `You are a trade compliance expert specializing in Certificates of Origin.
-
-Validate this ${agreementName} Certificate of Origin:
-
-Exporter: ${input.exporterName} (${input.exporterCountry || 'unknown'})
-Consignee: ${input.consigneeName} (${input.consigneeCountry || 'unknown'})
-Goods: ${input.goodsDescription}
-HTS Code: ${input.htsCode || 'not provided'}
-Country of Origin: ${input.countryOfOrigin}
-Origin Criterion: ${input.originCriterion || 'not specified'}
-Destination: ${input.destinationCountry || 'not specified'}
-Trade Agreement: ${agreementName}
-Agreement-specific fields: ${JSON.stringify(input.agreementFields || {})}
-
-Available criteria for ${agreementName}:
-${criteriaList}
-
-Return JSON with this EXACT structure:
-{
-  "isValid": true,
-  "warnings": ["warning 1"],
-  "suggestions": ["suggestion 1"],
-  "originCriterionExplanation": "Explanation of the criterion under ${agreementName}",
-  "recommendedCriterion": "A",
-  "tradeAgreements": ["${input.tradeAgreement}"],
-  "complianceScore": 85,
-  "missingFields": ["field name if required but missing"]
-}`;
-
-        const aiResponse = await invokeLLM({
-          messages: [
-            { role: "system", content: "You are a trade compliance expert. Return only valid JSON." },
-            { role: "user", content: validationPrompt }
-          ],
-          response_format: { type: "json_object" },
-        });
-
-        const content = aiResponse.choices[0]?.message?.content;
-        let validationResult: any = {
-          isValid: true,
-          warnings: [] as string[],
-          suggestions: [] as string[],
-          originCriterionExplanation: "Origin criterion validated",
-          complianceScore: 100,
-          missingFields: [],
-        };
-        try {
-          const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-          validationResult = parsed;
-        } catch {}
+        // Rule-based validation against the agreement definition (no LLM).
+        // Users can still ask for AI guidance via certificate.aiAssist.
+        const validationResult = trade.validateCertificate(input, agreement);
 
         // Generate certificate number with agreement prefix
         const now = new Date();
@@ -1200,13 +1211,14 @@ Return JSON with this EXACT structure:
 
     get: protectedProcedure
       .input(z.object({ certificateId: z.number() }))
-      .query(async ({ input }) => {
-        return await db.getCertificateById(input.certificateId);
+      .query(async ({ ctx, input }) => {
+        return await getOwnedCertificate(ctx.user, input.certificateId);
       }),
 
     getByShipment: protectedProcedure
       .input(z.object({ shipmentId: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
+        await getOwnedShipment(ctx.user, input.shipmentId);
         return await db.getCertificateByShipmentId(input.shipmentId);
       }),
 
@@ -1217,15 +1229,16 @@ Return JSON with this EXACT structure:
 
     issue: protectedProcedure
       .input(z.object({ certificateId: z.number() }))
-      .mutation(async ({ input }) => {
+      .mutation(async ({ ctx, input }) => {
+        await getOwnedCertificate(ctx.user, input.certificateId);
         await db.updateCertificate(input.certificateId, { status: "issued" });
         return { success: true };
       }),
 
     delete: protectedProcedure
       .input(z.object({ certificateId: z.number() }))
-      .mutation(async ({ input }) => {
-        await db.deleteCertificate(input.certificateId);
+      .mutation(async ({ ctx, input }) => {
+        await db.deleteCertificate(input.certificateId, ctx.user.id);
         return { success: true };
       }),
   }),
@@ -1300,7 +1313,7 @@ Return JSON with this EXACT structure:
       }))
       .mutation(async ({ ctx, input }) => {
         if (ctx.user.role !== 'admin') throw new TRPCError({ code: 'FORBIDDEN', message: 'Admin access required' });
-        const { addCredits, deductCredits } = await import('./credits');
+        const { addCredits } = await import('./credits');
         const targetUser = await db.getUserById(input.userId);
         if (!targetUser) throw new TRPCError({ code: 'NOT_FOUND', message: 'User not found' });
         if (input.direction === 'add') {
@@ -1308,15 +1321,7 @@ Return JSON with this EXACT structure:
         } else {
           const currentBalance = parseFloat(targetUser.credits || '0');
           if (currentBalance < input.amount) throw new TRPCError({ code: 'BAD_REQUEST', message: 'User has insufficient credits' });
-          // Directly update credits for admin deductions (bypass feature-based deductCredits)
-          const { sql } = await import('drizzle-orm');
-          const { users } = await import('../drizzle/schema');
-          const { getDb } = await import('./db');
-          const dbConn = await getDb();
-          if (dbConn) {
-            await dbConn.update(users).set({ credits: sql`credits - ${input.amount}` }).where(sql`id = ${input.userId}`);
-          }
-          // Log the transaction
+          // addCredits with a negative amount both updates the balance and logs the transaction
           await addCredits(input.userId, -input.amount, 'admin_adjustment', `[DEDUCT] ${input.reason}`);
         }
         const updated = await db.getUserById(input.userId);

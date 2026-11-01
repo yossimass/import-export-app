@@ -105,3 +105,10 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+.project-config.json
+
+# Netlify
+.netlify/
+
+# Manus platform artifacts
+.manus/

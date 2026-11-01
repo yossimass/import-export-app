@@ -1,15 +1,11 @@
 import { defineConfig } from "drizzle-kit";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
-}
+const connectionString = process.env.DATABASE_URL ?? process.env.NETLIFY_DATABASE_URL;
 
 export default defineConfig({
   schema: "./drizzle/schema.ts",
   out: "./drizzle",
-  dialect: "mysql",
-  dbCredentials: {
-    url: connectionString,
-  },
+  dialect: "postgresql",
+  // Only needed for migrate/push; `generate` works offline
+  dbCredentials: { url: connectionString ?? "" },
 });

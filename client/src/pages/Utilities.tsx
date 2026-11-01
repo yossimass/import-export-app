@@ -49,7 +49,11 @@ export default function Utilities() {
     try {
       const result = await estimateQuery.refetch();
       if (result.data) {
-        toast.success(`Estimated shipping cost: $${result.data.estimatedCost || result.data}`);
+        const { express, air, sea } = result.data;
+        toast.success(
+          `Express $${express.low}–${express.high} · Air $${air.low}–${air.high} · Sea $${sea.low}–${sea.high}`,
+          { description: result.data.note }
+        );
       }
     } catch (error: any) {
       toast.error(error.message);

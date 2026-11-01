@@ -64,8 +64,9 @@ export default function Documents() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("File size must be less than 10MB");
+    // Netlify functions accept ~6MB request bodies; base64 encoding adds ~33%
+    if (file.size > 4 * 1024 * 1024) {
+      toast.error("File size must be less than 4MB");
       return;
     }
 

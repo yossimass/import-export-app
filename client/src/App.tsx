@@ -1,26 +1,32 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/NotFound";
+import { lazy, Suspense } from "react";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
-import HtsSearch from "./pages/HtsSearch";
-import TariffCalculator from "./pages/TariffCalculator";
-import Regulations from "./pages/Regulations";
-import Documents from "./pages/Documents";
-import Checklists from "./pages/Checklists";
-import ChatAssistant from "./pages/ChatAssistant";
-import Utilities from "./pages/Utilities";
-import Alerts from "./pages/Alerts";
-import MyShipments from "./pages/MyShipments";
-import Credits from "./pages/Credits";
-import CertificateOfOrigin from "./pages/CertificateOfOrigin";
-import AdminPanel from "./pages/AdminPanel";
-import Profile from "./pages/Profile";
+
+// Route-level code splitting: each page loads only when visited
+const HtsSearch = lazy(() => import("./pages/HtsSearch"));
+const TariffCalculator = lazy(() => import("./pages/TariffCalculator"));
+const Regulations = lazy(() => import("./pages/Regulations"));
+const Documents = lazy(() => import("./pages/Documents"));
+const Checklists = lazy(() => import("./pages/Checklists"));
+const ChatAssistant = lazy(() => import("./pages/ChatAssistant"));
+const Utilities = lazy(() => import("./pages/Utilities"));
+const Alerts = lazy(() => import("./pages/Alerts"));
+const MyShipments = lazy(() => import("./pages/MyShipments"));
+const Credits = lazy(() => import("./pages/Credits"));
+const CertificateOfOrigin = lazy(() => import("./pages/CertificateOfOrigin"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const Profile = lazy(() => import("./pages/Profile"));
+const SignInPage = lazy(() => import("./pages/Auth").then(m => ({ default: m.SignInPage })));
+const SignUpPage = lazy(() => import("./pages/Auth").then(m => ({ default: m.SignUpPage })));
 
 function Router() {
   return (
+    <Suspense fallback={null}>
     <Switch>
       <Route path={"/"} component={Home} />
       <Route path={"/hts-search"} component={HtsSearch} />
@@ -36,9 +42,14 @@ function Router() {
       <Route path={"/certificate-of-origin"} component={CertificateOfOrigin} />
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/profile"} component={Profile} />
+      <Route path={"/sign-in"} component={SignInPage} />
+      <Route path={"/sign-in/*"} component={SignInPage} />
+      <Route path={"/sign-up"} component={SignUpPage} />
+      <Route path={"/sign-up/*"} component={SignUpPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   );
 }
 

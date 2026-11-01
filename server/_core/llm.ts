@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { getStore } from "@netlify/blobs";
 import { ENV } from "./env";
 
 export type Role = "system" | "user" | "assistant" | "tool" | "function";
@@ -66,6 +68,8 @@ export type InvokeParams = {
   output_schema?: OutputSchema;
   responseFormat?: ResponseFormat;
   response_format?: ResponseFormat;
+  /** Reuse an identical earlier response for this many seconds (0 = no cache). */
+  cacheTtlSeconds?: number;
 };
 
 export type ToolCall = {
@@ -209,16 +213,50 @@ const normalizeToolChoice = (
   return toolChoice;
 };
 
-const resolveApiUrl = () =>
-  ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
+const usingForge = () => !ENV.llmApiUrl;
+
+const resolveApiUrl = () => {
+  if (!usingForge()) return ENV.llmApiUrl;
+  return ENV.forgeApiUrl && ENV.forgeApiUrl.trim().length > 0
     ? `${ENV.forgeApiUrl.replace(/\/$/, "")}/v1/chat/completions`
     : "https://forge.manus.im/v1/chat/completions";
+};
+
+const resolveApiKey = () => ENV.llmApiKey || ENV.forgeApiKey;
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("OPENAI_API_KEY is not configured");
+  if (!resolveApiKey()) {
+    throw new Error("LLM_API_KEY is not configured");
   }
 };
+
+// ---------------------------------------------------------------------------
+// Response cache: Netlify Blobs when available (shared across function
+// instances), otherwise an in-process Map.
+// ---------------------------------------------------------------------------
+const memoryCache = new Map<string, { expires: number; value: InvokeResult }>();
+
+async function cacheGet(key: string): Promise<InvokeResult | null> {
+  try {
+    const hit = (await getStore("llm-cache").get(key, { type: "json" })) as
+      | { expires: number; value: InvokeResult }
+      | null;
+    if (hit && hit.expires > Date.now()) return hit.value;
+    return null;
+  } catch {
+    const hit = memoryCache.get(key);
+    return hit && hit.expires > Date.now() ? hit.value : null;
+  }
+}
+
+async function cacheSet(key: string, value: InvokeResult, ttlSeconds: number) {
+  const entry = { expires: Date.now() + ttlSeconds * 1000, value };
+  try {
+    await getStore("llm-cache").setJSON(key, entry);
+  } catch {
+    memoryCache.set(key, entry);
+  }
+}
 
 const normalizeResponseFormat = ({
   responseFormat,
@@ -268,6 +306,16 @@ const normalizeResponseFormat = ({
 export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   assertApiKey();
 
+  const ttl = params.cacheTtlSeconds ?? 0;
+  const { cacheTtlSeconds: _ignored, ...cacheable } = params;
+  const cacheKey = ttl > 0
+    ? createHash("sha256").update(ENV.llmModel + JSON.stringify(cacheable)).digest("hex")
+    : "";
+  if (cacheKey) {
+    const cached = await cacheGet(cacheKey);
+    if (cached) return cached;
+  }
+
   const {
     messages,
     tools,
@@ -280,7 +328,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: ENV.llmModel,
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,9 +344,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  // Keep responses short: Netlify functions time out after ~10s by default
+  payload.max_tokens = params.maxTokens ?? params.max_tokens ?? 4096;
+  if (usingForge()) {
+    payload.thinking = { budget_tokens: 128 };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
@@ -316,7 +365,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${resolveApiKey()}`,
     },
     body: JSON.stringify(payload),
   });
@@ -328,5 +377,9 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     );
   }
 
-  return (await response.json()) as InvokeResult;
+  const result = (await response.json()) as InvokeResult;
+  if (cacheKey && result.choices?.[0]?.message?.content) {
+    await cacheSet(cacheKey, result, ttl);
+  }
+  return result;
 }
