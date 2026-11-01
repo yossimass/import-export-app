@@ -45,8 +45,6 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    // Sessions are owned by Clerk; the client signs out via Clerk. Kept for API compatibility.
-    logout: protectedProcedure.mutation(() => ({ success: true } as const)),
   }),
 
   // ============================================================================

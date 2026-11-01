@@ -1,80 +1,58 @@
-import { createClerkClient, verifyToken } from "@clerk/backend";
 import { ForbiddenError } from "@shared/_core/errors";
 import { parse as parseCookieHeader } from "cookie";
-import type { Request } from "express";
+import { randomBytes } from "node:crypto";
+import type { Request, Response } from "express";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
-import { ENV } from "./env";
 
-// The users.openId column holds the Clerk user id ("user_...").
-
-const clerk = createClerkClient({ secretKey: ENV.clerkSecretKey });
+// Alpha: no login. Each browser gets an anonymous workspace identified by a
+// random, unguessable cookie value. users.openId stores "anon_<id>".
+const COOKIE_NAME = "itcp_workspace";
+const COOKIE_MAX_AGE_MS = 365 * 24 * 60 * 60 * 1000;
+const ID_PATTERN = /^[A-Za-z0-9_-]{22,64}$/;
 
 // Avoid a DB write on every request; refresh lastSignedIn at most hourly
 const LAST_SIGNED_IN_REFRESH_MS = 60 * 60 * 1000;
 
-/** Clerk session token from the Authorization header, or the __session cookie (e.g. file links). */
-function getSessionToken(req: Request): string | undefined {
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) return header.slice("Bearer ".length);
+function readWorkspaceId(req: Request): string | undefined {
   if (!req.headers.cookie) return undefined;
-  return parseCookieHeader(req.headers.cookie).__session;
+  const id = parseCookieHeader(req.headers.cookie)[COOKIE_NAME];
+  return id && ID_PATTERN.test(id) ? id : undefined;
 }
 
-/** Create or link the local user row for a Clerk user on first sign-in. */
-async function syncClerkUser(clerkUserId: string): Promise<User | undefined> {
-  const clerkUser = await clerk.users.getUser(clerkUserId);
-  const primaryEmail = clerkUser.primaryEmailAddress;
-  const email = primaryEmail?.emailAddress ?? null;
-  const emailVerified = primaryEmail?.verification?.status === "verified";
-
-  // Carry over accounts created under the previous (Manus) login by verified email
-  if (email && emailVerified) {
-    const existing = await db.getUserByEmail(email);
-    if (existing && !existing.openId.startsWith("user_")) {
-      await db.relinkUserOpenId(existing.id, clerkUserId);
-    }
-  }
-
-  await db.upsertUser({
-    openId: clerkUserId,
-    name: clerkUser.fullName || clerkUser.username || null,
-    email,
-    loginMethod: clerkUser.externalAccounts[0]?.provider ?? "email",
-    lastSignedIn: new Date(),
-  });
-  return db.getUserByOpenId(clerkUserId);
-}
-
-export async function authenticateRequest(req: Request): Promise<User> {
-  const token = getSessionToken(req);
-  if (!token) throw ForbiddenError("Missing session token");
-
-  let clerkUserId: string;
-  try {
-    const payload = await verifyToken(token, {
-      secretKey: ENV.clerkSecretKey,
-      authorizedParties: ENV.clerkAuthorizedParties.length ? ENV.clerkAuthorizedParties : undefined,
-    });
-    clerkUserId = payload.sub;
-  } catch (error) {
-    throw ForbiddenError("Invalid session token");
-  }
-
-  let user = await db.getUserByOpenId(clerkUserId);
+async function loadUser(workspaceId: string): Promise<User | undefined> {
+  const openId = `anon_${workspaceId}`;
+  let user = await db.getUserByOpenId(openId);
   if (!user) {
-    try {
-      user = await syncClerkUser(clerkUserId);
-    } catch (error) {
-      console.error("[Auth] Failed to sync user from Clerk:", error);
-      throw ForbiddenError("Failed to sync user info");
-    }
+    await db.upsertUser({ openId, name: "Alpha tester", loginMethod: "anonymous", lastSignedIn: new Date() });
+    user = await db.getUserByOpenId(openId);
+  } else if (Date.now() - new Date(user.lastSignedIn).getTime() > LAST_SIGNED_IN_REFRESH_MS) {
+    await db.upsertUser({ openId, lastSignedIn: new Date() });
   }
-  if (!user) throw ForbiddenError("User not found");
+  return user;
+}
 
-  if (Date.now() - new Date(user.lastSignedIn).getTime() > LAST_SIGNED_IN_REFRESH_MS) {
-    await db.upsertUser({ openId: user.openId, lastSignedIn: new Date() });
+/** Resolve the caller's workspace user, creating the workspace (and cookie) on first visit. */
+export async function getOrCreateWorkspaceUser(req: Request, res: Response): Promise<User | undefined> {
+  let workspaceId = readWorkspaceId(req);
+  if (!workspaceId) {
+    workspaceId = randomBytes(16).toString("base64url");
+    res.cookie(COOKIE_NAME, workspaceId, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: req.secure,
+      path: "/",
+      maxAge: COOKIE_MAX_AGE_MS,
+    });
   }
+  return loadUser(workspaceId);
+}
 
+/** Resolve the caller's existing workspace user without creating one (e.g. file downloads). */
+export async function authenticateRequest(req: Request): Promise<User> {
+  const workspaceId = readWorkspaceId(req);
+  if (!workspaceId) throw ForbiddenError("No workspace");
+  const user = await loadUser(workspaceId);
+  if (!user) throw ForbiddenError("Workspace not found");
   return user;
 }

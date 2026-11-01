@@ -1,10 +1,9 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
 import {
   Search, Calculator, FileText, FolderOpen, CheckSquare,
-  MessageSquare, Settings, Bell, LogOut, Package, Menu, X,
+  MessageSquare, Settings, Bell, Package, Menu, X,
   Wallet, Stamp, User, ShieldCheck, ChevronDown,
 } from "lucide-react";
 import {
@@ -16,7 +15,7 @@ import { useState } from "react";
 
 export default function Navigation() {
   const [location] = useLocation();
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const isAdmin = (user as any)?.role === "admin";
@@ -45,11 +44,6 @@ export default function Navigation() {
     { path: "/profile", label: "Profile", icon: User },
     ...(isAdmin ? [{ path: "/admin", label: "Admin Panel", icon: ShieldCheck }] : []),
   ];
-
-  const handleLogout = async () => {
-    await logout();
-    window.location.href = "/";
-  };
 
   const closeMobileMenu = () => setMobileMenuOpen(false);
   const toolActive = toolItems.some((i) => i.path === location);
@@ -171,10 +165,6 @@ export default function Navigation() {
                         </DropdownMenuItem>
                       </>
                     )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={handleLogout} className="text-destructive cursor-pointer">
-                      <LogOut className="w-4 h-4 mr-2" /> Logout
-                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -187,11 +177,7 @@ export default function Navigation() {
                   {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
                 </Button>
               </>
-            ) : (
-              <Button asChild variant="default" size="sm">
-                <a href={getLoginUrl()}>Login</a>
-              </Button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -211,16 +197,6 @@ export default function Navigation() {
                 </Button>
               </Link>
             ))}
-            <div className="pt-4 border-t border-gray-200">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => { handleLogout(); closeMobileMenu(); }}
-                className="w-full justify-start gap-3"
-              >
-                <LogOut className="w-5 h-5" /> Logout
-              </Button>
-            </div>
           </div>
         </div>
       )}

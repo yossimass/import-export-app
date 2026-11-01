@@ -21,8 +21,6 @@ const Credits = lazy(() => import("./pages/Credits"));
 const CertificateOfOrigin = lazy(() => import("./pages/CertificateOfOrigin"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Profile = lazy(() => import("./pages/Profile"));
-const SignInPage = lazy(() => import("./pages/Auth").then(m => ({ default: m.SignInPage })));
-const SignUpPage = lazy(() => import("./pages/Auth").then(m => ({ default: m.SignUpPage })));
 
 function Router() {
   return (
@@ -42,10 +40,6 @@ function Router() {
       <Route path={"/certificate-of-origin"} component={CertificateOfOrigin} />
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/profile"} component={Profile} />
-      <Route path={"/sign-in"} component={SignInPage} />
-      <Route path={"/sign-in/*"} component={SignInPage} />
-      <Route path={"/sign-up"} component={SignUpPage} />
-      <Route path={"/sign-up/*"} component={SignUpPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

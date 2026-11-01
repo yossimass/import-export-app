@@ -18,7 +18,6 @@ import {
   TrendingDown,
   Gift,
 } from "lucide-react";
-import { getLoginUrl } from "@/const";
 
 export default function Profile() {
   const [, setLocation] = useLocation();
@@ -48,11 +47,9 @@ export default function Profile() {
       <div className="min-h-screen flex items-center justify-center">
         <Card className="p-8 text-center max-w-sm">
           <User className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-          <h2 className="text-xl font-bold mb-2">Sign In Required</h2>
-          <p className="text-muted-foreground mb-4">Please sign in to view your profile.</p>
-          <Button asChild>
-            <a href={getLoginUrl()}>Sign In</a>
-          </Button>
+          <h2 className="text-xl font-bold mb-2">Workspace Unavailable</h2>
+          <p className="text-muted-foreground mb-4">Your workspace couldn't be loaded. Please try again.</p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
         </Card>
       </div>
     );

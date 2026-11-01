@@ -10,7 +10,6 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { getLoginUrl } from "@/const";
 import Navigation from "@/components/Navigation";
 import {
   FileText, Download, CheckCircle, AlertTriangle, Info,
@@ -363,9 +362,9 @@ export default function CertificateOfOrigin() {
         <Navigation />
         <div className="container py-20 text-center">
           <Shield className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-          <h2 className="text-2xl font-bold mb-2">Authentication Required</h2>
-          <p className="text-muted-foreground mb-6">Please log in to generate Certificates of Origin.</p>
-          <Button asChild><a href={getLoginUrl()}>Log In</a></Button>
+          <h2 className="text-2xl font-bold mb-2">Workspace Unavailable</h2>
+          <p className="text-muted-foreground mb-6">Your workspace couldn't be loaded. Please try again.</p>
+          <Button onClick={() => window.location.reload()}>Retry</Button>
         </div>
       </div>
     );
