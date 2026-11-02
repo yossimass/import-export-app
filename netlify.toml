@@ -9,12 +9,7 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# API (tRPC, OAuth callback, file downloads) → single Express function
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api/:splat"
-  status = 200
-  force = true
+# /api/* is routed to netlify/functions/api.ts by its `config.path`
 
 # SPA fallback for client-side routes
 [[redirects]]
