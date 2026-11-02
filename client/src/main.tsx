@@ -6,7 +6,7 @@ import superjson from "superjson";
 import App from "./App";
 import "./index.css";
 
-// Many queries trigger paid LLM calls server-side; don't silently re-run them
+// Lookups are deterministic; don't silently re-run them
 // on window focus or remount.
 const queryClient = new QueryClient({
   defaultOptions: {

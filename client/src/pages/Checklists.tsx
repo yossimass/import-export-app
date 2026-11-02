@@ -63,7 +63,7 @@ export default function Checklists() {
     }
     // Use shipmentId from URL or create new one
     generateMutation.mutate({
-      shipmentId: shipmentId || 1,
+      shipmentId: shipmentId || undefined,
       shipmentType: "import",
       originCountry: origin,
       destinationCountry: destination,
@@ -81,7 +81,7 @@ export default function Checklists() {
           <div className="w-2 h-12 bg-primary mb-4"></div>
           <h1 className="text-4xl font-bold mb-2">Compliance Checklists</h1>
           <p className="text-muted-foreground">
-            AI-generated checklists for your specific trade scenario
+            Checklists built from your route, product and applicable trade agreements
           </p>
         </div>
 

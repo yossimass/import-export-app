@@ -1,11 +1,13 @@
 /**
  * Deterministic trade calculations that replace LLM calls.
- * - HTS lookups and duty rates come from the official USITC HTS REST API.
+ * - HTS lookups and duty rates come from a bundled copy of the USITC schedule
+ *   (server/htsIndex.ts), falling back to the USITC HTS REST API.
  * - Exchange rates come from open.er-api.com (free, no key, daily updates).
  * - Shipping estimates and certificate validation are rule-based.
  */
 
 import type { TradeAgreement } from "../shared/tradeAgreements";
+import { linesByPrefix } from "./htsIndex";
 
 const USITC_SEARCH = "https://hts.usitc.gov/reststop/search";
 const FETCH_TIMEOUT_MS = 6000;
@@ -81,6 +83,20 @@ export function looksLikeHtsCode(query: string) {
 export async function lookupHts(code: string, timeoutMs?: number): Promise<HtsLine | null> {
   const digits = digitsOf(code);
   if (digits.length < 4) return null;
+
+  const local = linesByPrefix(digits)[0];
+  if (local) {
+    return {
+      code: local.code,
+      description: local.path,
+      general: local.general,
+      special: local.special,
+      other: local.other,
+      units: local.units,
+    };
+  }
+
+  // Not in the bundled copy (e.g. a code added since it was built): ask USITC
   const searchKey = digits.length >= 8
     ? `${digits.slice(0, 4)}.${digits.slice(4, 6)}.${digits.slice(6, 8)}`
     : digits;

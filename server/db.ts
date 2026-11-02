@@ -1,17 +1,31 @@
 import { and, count, desc, eq, gte } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+import { getConnectionString } from "@netlify/database";
 import { InsertUser, users, shipments, documents, alerts, chatMessages, InsertShipment, Shipment, InsertDocument, Document, certificates, InsertCertificate, Certificate } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
+let _dbUrl = "";
+
+function connectionString(): string {
+  if (ENV.databaseUrl) return ENV.databaseUrl;
+  try {
+    return getConnectionString(); // Netlify Database, provisioned automatically on deploy
+  } catch {
+    return "";
+  }
+}
 
 export async function getDb() {
-  if (!_db && ENV.databaseUrl) {
+  // Re-read each time: Netlify may rotate the database credentials
+  const url = connectionString();
+  if (url && url !== _dbUrl) {
     try {
       // Small pool per serverless instance; prepare:false keeps it compatible
-      // with transaction-mode poolers (Neon/Netlify DB pooled URLs, PgBouncer)
-      _db = drizzle(postgres(ENV.databaseUrl, { max: 3, prepare: false }));
+      // with transaction-mode poolers (Netlify Database/Neon pooled URLs, PgBouncer)
+      _db = drizzle(postgres(url, { max: 3, prepare: false }));
+      _dbUrl = url;
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;

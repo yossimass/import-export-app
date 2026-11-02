@@ -80,7 +80,7 @@ function POPreviewPanel({ poData, onConfirm, onEdit, isCreating }: {
       <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
         <p className="text-sm text-green-800 font-medium">
-          AI successfully extracted data from your PO. Review and confirm below.
+          Data was read from your PO. Check every field before confirming — automatic reading can miss or misplace values.
         </p>
       </div>
 
@@ -185,9 +185,9 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
       return;
     }
 
-    const allowed = ["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp", "image/tiff"];
-    if (!allowed.includes(file.type)) {
-      setErrorMsg("Unsupported file type. Please upload a PDF or image (PNG, JPG, WEBP, TIFF).");
+    const isCsv = file.type === "text/csv" || file.name.toLowerCase().endsWith(".csv");
+    if (file.type !== "application/pdf" && !isCsv) {
+      setErrorMsg("Unsupported file type. Please upload a PDF (with selectable text) or a CSV.");
       setStep("error");
       return;
     }
@@ -209,16 +209,16 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
       const uploadResult = await uploadDocMutation.mutateAsync({
         fileName: file.name,
         fileData: base64,
-        mimeType: file.type,
+        mimeType: isCsv ? "text/csv" : file.type,
         documentType: 'purchase_order',
       });
       const fileUrl = uploadResult.url;
 
-      // Extract PO data via AI
+      // Read PO fields from the document text
       const result = await importPOMutation.mutateAsync({
         fileUrl,
         fileName: file.name,
-        mimeType: file.type,
+        mimeType: isCsv ? "text/csv" : file.type,
       });
 
       setExtractedPO(result as POData);
@@ -264,7 +264,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             Import Purchase Order
           </DialogTitle>
           <DialogDescription>
-            Upload a PO document (PDF or image). AI will extract all fields and pre-fill a new shipment.
+            Upload a PO as a PDF with selectable text, or a CSV with columns like Description, Qty, Unit Price, Total, HTS. Fields are read automatically to pre-fill a new shipment.
           </DialogDescription>
         </DialogHeader>
 
@@ -289,7 +289,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.tiff"
+              accept=".pdf,.csv"
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
             />

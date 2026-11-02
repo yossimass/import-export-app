@@ -2,15 +2,17 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
-import { invokeLLM, type Message } from "./_core/llm";
 import * as db from "./db";
+import * as compliance from "./compliance";
+import { searchByKeywords } from "./htsIndex";
 import { storageDelete, storagePut, storageRead } from "./storage";
 import * as trade from "./tradeData";
 import type { User } from "../drizzle/schema";
 
-// LLM cache lifetimes: identical prompts within this window reuse the stored answer
-const CACHE_WEEK = 7 * 86400;
-const CACHE_MONTH = 30 * 86400;
+function requireUser(user: User | null): User {
+  if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Workspace unavailable" });
+  return user;
+}
 
 /** Load a shipment and verify the caller owns it (admins may access any). */
 async function getOwnedShipment(user: User, shipmentId: number) {
@@ -29,16 +31,15 @@ async function getOwnedCertificate(user: User, certificateId: number) {
   return cert;
 }
 
-/** Turn an /api/files/<key> URL into a data: URL so external LLMs can read it. */
-async function inlineStoredFile(user: User, fileUrl: string): Promise<string> {
-  if (!fileUrl.startsWith("/api/files/")) return fileUrl;
-  const key = decodeURIComponent(fileUrl.slice("/api/files/".length));
-  if (!key.startsWith(`${user.id}/`)) {
+/** Read a file the caller uploaded (via its /api/files/<key> URL). */
+async function readOwnedFile(user: User, fileUrl: string) {
+  const key = decodeURIComponent(fileUrl.replace(/^\/api\/files\//, ""));
+  if (!fileUrl.startsWith("/api/files/") || !key.startsWith(`${user.id}/`)) {
     throw new TRPCError({ code: "FORBIDDEN", message: "File not accessible" });
   }
   const file = await storageRead(key);
   if (!file) throw new TRPCError({ code: "NOT_FOUND", message: "File not found" });
-  return `data:${file.contentType};base64,${Buffer.from(file.data).toString("base64")}`;
+  return file;
 }
 
 export const appRouter = router({
@@ -124,76 +125,32 @@ export const appRouter = router({
         return { success: true };
       }),
 
-    // ── Import Purchase Order: upload file URL, extract data via AI ──────────
+    // ── Import Purchase Order: parse the uploaded file's text ─────────────────
     importPO: protectedProcedure
       .input(z.object({
-        fileUrl: z.string().min(1), // absolute URL or /api/files/<key>
+        fileUrl: z.string().min(1), // /api/files/<key>
         fileName: z.string(),
-        mimeType: z.string(), // application/pdf, image/*, etc.
+        mimeType: z.string(), // application/pdf, text/csv, text/plain
       }))
       .mutation(async ({ ctx, input }) => {
-        const llmFileUrl = await inlineStoredFile(ctx.user, input.fileUrl);
-        // Build message content based on file type
-        const isImage = input.mimeType.startsWith('image/');
-        const isPdf = input.mimeType === 'application/pdf';
-
-        const systemPrompt = `You are an expert trade document parser. Extract all structured data from the Purchase Order document provided. Return a JSON object with these fields (use null for missing fields):
-{
-  "poNumber": string,
-  "poDate": string (ISO date),
-  "buyerName": string,
-  "buyerAddress": string,
-  "sellerName": string,
-  "sellerAddress": string,
-  "shipToName": string,
-  "shipToAddress": string,
-  "incoterms": string (e.g. FOB, CIF, EXW),
-  "currency": string (3-letter ISO code),
-  "paymentTerms": string,
-  "deliveryDate": string (ISO date),
-  "totalValue": string,
-  "notes": string,
-  "lineItems": [
-    {
-      "lineNumber": number,
-      "description": string,
-      "quantity": string,
-      "unit": string,
-      "unitPrice": string,
-      "totalPrice": string,
-      "htsCode": string (if present),
-      "countryOfOrigin": string (3-letter ISO code if present)
-    }
-  ]
-}`;
-
-        const messages: Message[] = [];
-        messages.push({ role: 'system', content: systemPrompt });
-        if (isImage) {
-          messages.push({ role: 'user', content: [
-            { type: 'image_url', image_url: { url: llmFileUrl, detail: 'high' } },
-            { type: 'text', text: 'Extract all Purchase Order data from this document image.' }
-          ]});
-        } else if (isPdf) {
-          messages.push({ role: 'user', content: [
-            { type: 'file_url', file_url: { url: llmFileUrl, mime_type: 'application/pdf' } },
-            { type: 'text', text: 'Extract all Purchase Order data from this PDF document.' }
-          ]});
+        const file = await readOwnedFile(ctx.user, input.fileUrl);
+        const isCsv = input.mimeType === "text/csv" || /\.csv$/i.test(input.fileName);
+        let text: string;
+        if (input.mimeType === "application/pdf") {
+          const { getDocumentProxy, extractText } = await import("unpdf");
+          const pdf = await getDocumentProxy(new Uint8Array(file.data));
+          text = (await extractText(pdf, { mergePages: true })).text;
+        } else if (isCsv || input.mimeType.startsWith("text/")) {
+          text = Buffer.from(file.data).toString("utf8");
         } else {
-          messages.push({ role: 'user', content: `Extract Purchase Order data from file: ${input.fileName}` });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Upload a PDF or CSV purchase order. Scanned images can't be read automatically." });
+        }
+        if (!text.trim()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This PDF has no text layer (it looks scanned). Export it as a text PDF or CSV, or create the shipment manually." });
         }
 
-        const response = await invokeLLM({
-          messages,
-          response_format: { type: 'json_object' },
-        });
-
-        const raw = (response.choices[0]?.message?.content as string) || '{}';
-        let extracted: any = {};
-        try { extracted = JSON.parse(raw); } catch { extracted = {}; }
-
         return {
-          ...extracted,
+          ...compliance.parsePurchaseOrder(text, isCsv),
           fileUrl: input.fileUrl,
           extractedAt: new Date().toISOString(),
         };
@@ -282,17 +239,17 @@ export const appRouter = router({
   }),
 
   // ============================================================================
-  // HTS SEARCH - AI-powered, evergreen
+  // HTS SEARCH - bundled USITC schedule, no LLM
   // ============================================================================
   hts: router({
-    search: protectedProcedure
+    search: publicProcedure
       .input(z.object({
         query: z.string(),
         limit: z.number().optional(),
         shipmentId: z.number().optional(), // Link to workflow
       }))
       .query(async ({ input }) => {
-        // HTS codes are looked up directly in the official schedule — no LLM needed
+        const limit = Math.min(input.limit || 8, 25);
         if (trade.looksLikeHtsCode(input.query)) {
           const line = await trade.lookupHts(input.query).catch(() => null);
           if (!line) return [];
@@ -307,133 +264,23 @@ export const appRouter = router({
           }];
         }
 
-        try {
-          const query = input.query.trim().toLowerCase();
-          const response = await invokeLLM({
-          cacheTtlSeconds: CACHE_MONTH,
-          maxTokens: 2048,
-          messages: [
-            {
-              role: "system",
-              content: `You are an expert in Harmonized Tariff Schedule (HTS) classification. You MUST return valid JSON with this exact structure:
-{
-  "results": [
-    {
-      "code": "1234.56.78",
-      "description": "Detailed product description",
-      "dutyRate": "5.5%",
-      "riskLevel": "low",
-      "reasoning": "Why this code applies",
-      "alternatives": [{"code": "1234.56.79", "reason": "Alternative classification"}],
-      "confidence": 0.9
-    }
-  ]
-}
-ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
-            },
-            {
-              role: "user",
-              content: `Classify this product for US import: "${query}". Return ${input.limit || 5} HTS codes ranked by accuracy. Include 2025 MFN duty rates, Section 301 considerations if from China, and alternative classifications.`
-            }
-          ],
-          response_format: { type: "json_object" }
+        const hits = searchByKeywords(input.query, limit);
+        const best = hits[0]?.score || 1;
+        return hits.map((hit, i) => {
+          const confidence = Math.round(Math.min(0.9, (hit.matched / hit.total) * (hit.score / best) * 0.9) * 100) / 100;
+          return {
+            code: hit.code,
+            description: hit.path,
+            dutyRate: hit.general || "varies",
+            riskLevel: confidence >= 0.75 ? "low" : confidence >= 0.5 ? "medium" : "high",
+            reasoning: `Keyword match on the official schedule (${hit.matched} of ${hit.total} terms). Confirm the full description and chapter notes before using this code.`,
+            alternatives: hits
+              .filter((_, j) => j !== i && j < 4)
+              .slice(0, 2)
+              .map(alt => ({ code: alt.code, reason: alt.path.split(" > ").pop() })),
+            confidence,
+          };
         });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) {
-          console.warn('[HTS Search] No content returned');
-          return [];
-        }
-
-        const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        let results = parsed.results || parsed.codes || parsed.items || [];
-
-        // If AI returns no results, use intelligent fallback based on query
-        if (!results || results.length === 0) {
-          console.warn('[HTS Search] AI returned no results, using intelligent fallback for:', input.query);
-          // Generate reasonable fallback based on common product categories
-          const query = input.query.toLowerCase();
-          if (query.includes('steel') || query.includes('pipe') || query.includes('metal')) {
-            results = [{
-              code: '7306.30.50',
-              description: 'Other welded pipes and tubes of circular cross-section, of iron or nonalloy steel',
-              dutyRate: '0%',
-              riskLevel: 'medium',
-              reasoning: 'Steel pipes typically fall under Chapter 73 (Articles of iron or steel). Section 301 duties may apply for Chinese origin.',
-              alternatives: [
-                { code: '7304.31.60', reason: 'If seamless instead of welded' },
-                { code: '7306.19.10', reason: 'If stainless steel' }
-              ],
-              confidence: 0.75
-            }];
-          } else {
-            results = [{
-              code: '9999.00.00',
-              description: `Product classification for "${input.query}" - manual verification required`,
-              dutyRate: 'varies',
-              riskLevel: 'high',
-              reasoning: 'AI could not determine specific HTS code. Please consult with a customs broker for accurate classification.',
-              alternatives: [],
-              confidence: 0.3
-            }];
-          }
-        }
-
-        // Replace AI-guessed duty rates with official USITC rates where possible
-        const official = await Promise.all(
-          results.map((item: any) =>
-            trade.lookupHts(item.code || item.htsCode || "", 3000).catch(() => null)
-          )
-        );
-
-        return results.map((item: any, i: number) => ({
-          code: official[i]?.code || item.code || item.htsCode || "",
-          description: item.description || official[i]?.description || "",
-          dutyRate: official[i]?.general || item.dutyRate || item.rate || "varies",
-          riskLevel: item.riskLevel || item.risk || "medium",
-          reasoning: item.reasoning || item.rationale || "AI-generated match",
-          alternatives: item.alternatives || [],
-          confidence: official[i] ? (item.confidence || 0.85) : Math.min(item.confidence || 0.5, 0.5),
-        }));
-        } catch (error) {
-          console.error('[HTS Search] Error:', error);
-          return [];
-        }
-      }),
-
-    recommend: protectedProcedure
-      .input(z.object({
-        productDescription: z.string(),
-        shipmentId: z.number().optional(),
-      }))
-      .mutation(async ({ input }) => {
-        const response = await invokeLLM({
-          cacheTtlSeconds: CACHE_MONTH,
-          messages: [
-            {
-              role: "system",
-              content: "You are an HTS classification expert. Analyze product descriptions and recommend the most appropriate HTS code with detailed reasoning."
-            },
-            {
-              role: "user",
-              content: `Product: "${input.productDescription}". Recommend the best HTS code with: 1) Primary recommendation with confidence score, 2) Detailed reasoning, 3) Alternative codes with pros/cons, 4) Risk factors, 5) Classification tips.`
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) throw new Error("No recommendation generated");
-
-        const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        return {
-          primaryCode: parsed.primaryCode || parsed.recommended || "",
-          confidence: parsed.confidence || 0.85,
-          reasoning: parsed.reasoning || parsed.rationale || "",
-          alternatives: parsed.alternatives || [],
-          riskFactors: parsed.riskFactors || parsed.risks || [],
-          classificationTips: parsed.classificationTips || parsed.tips || [],
-        };
       }),
   }),
 
@@ -441,7 +288,7 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
   // TARIFF CALCULATOR - Enhanced with trade agreements and breakdowns
   // ============================================================================
   tariff: router({
-    calculate: protectedProcedure
+    calculate: publicProcedure
       .input(z.object({
         htsCode: z.string(),
         originCountry: z.string(),
@@ -453,10 +300,11 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
         freightCost: z.number().optional(),
         insuranceCost: z.number().optional(),
         additionalDutyRate: z.number().min(0).max(500).optional(), // % (Section 301/232 etc.)
+        dutyRate: z.number().min(0).max(500).optional(), // % base rate for non-US destinations
         shipmentId: z.number().optional(), // Link to workflow
       }))
       .mutation(async ({ ctx, input }) => {
-        if (input.shipmentId) await getOwnedShipment(ctx.user, input.shipmentId);
+        if (input.shipmentId) await getOwnedShipment(requireUser(ctx.user), input.shipmentId);
 
         // US imports: compute from official HTS rates, no LLM
         if (input.destinationCountry.toUpperCase() === "USA") {
@@ -487,185 +335,70 @@ ALWAYS return at least 3 results. Use real HTS codes from the 2025 schedule.`
           return result;
         }
 
-        // Non-US destinations: fall back to the LLM (cached)
-        const prompt = `Calculate import duties for:
+        // Other destinations: no bundled tariff, so use the duty rate the user enters
+        const baseRate = (input.dutyRate ?? 0) / 100;
+        const dutyAmount = input.value * baseRate;
+        const additionalDuties = input.value * ((input.additionalDutyRate ?? 0) / 100);
+        const totalDuties = dutyAmount + additionalDuties;
+        const landedCost = input.value + (input.freightCost || 0) + (input.insuranceCost || 0) + totalDuties;
+        const round2 = (n: number) => Math.round(n * 100) / 100;
+        const agreements = compliance.agreementsFor(input.originCountry, input.destinationCountry);
+        const explanation = [
+          input.dutyRate === undefined
+            ? `Automatic duty rates are only available for US imports. Enter the ${compliance.countryName(compliance.resolveCountry(input.destinationCountry))} duty rate for HTS ${input.htsCode} to calculate duty.`
+            : `Duty at the entered rate of ${input.dutyRate}% on a value of ${input.value}.`,
+          agreements.length ? `A preferential rate may apply under ${agreements.join(", ")} if the goods qualify.` : "",
+          "Import VAT/GST and local fees are not included.",
+        ].filter(Boolean).join("\n");
+        const result = {
+          mfnRate: input.dutyRate !== undefined ? `${input.dutyRate}%` : "Not available",
+          preferentialRate: null,
+          additionalDuties: round2(additionalDuties),
+          appliedRate: input.dutyRate !== undefined ? `${input.dutyRate}%` : "Enter rate",
+          tradeAgreement: "Entered rate",
+          exclusionStatus: "none",
+          dutyAmount: round2(dutyAmount),
+          mpf: 0,
+          hmf: 0,
+          totalDuties: round2(totalDuties),
+          landedCost: round2(landedCost),
+          rateSource: "User-entered rate",
+          rationale: explanation,
+          explanation,
+          alternatives: [] as Array<{ scenario: string; impact: string }>,
+          effectiveDate: new Date().toISOString(),
+        };
 
-HTS Code: ${input.htsCode}
-Origin: ${input.originCountry}
-Destination: ${input.destinationCountry}
-Merchandise Value: $${input.value}
-${input.quantity ? `Quantity: ${input.quantity}` : ''}
-${input.weight ? `Weight: ${input.weight} kg` : ''}
-${input.incoterm ? `Incoterm: ${input.incoterm}` : ''}
-${input.freightCost ? `Freight: $${input.freightCost}` : ''}
-${input.insuranceCost ? `Insurance: $${input.insuranceCost}` : ''}
-
-Return JSON with these EXACT fields:
-{
-  "mfnRate": "16.5%",  // MFN duty rate as string with %
-  "preferentialRate": "0%",  // Or null if no trade agreement
-  "additionalDuties": 2500,  // Section 301, AD/CVD as number
-  "appliedRate": "16.5%",  // Final rate used as string
-  "dutyAmount": 1650,  // Calculated duty in USD as number
-  "mpf": 34.64,  // Merchandise Processing Fee (0.3464% of value, min $27.75, max $538.40)
-  "hmf": 0,  // Harbor Maintenance Fee (0.125% if ocean freight)
-  "totalDuties": 4184.64,  // Sum of all duties and fees as number
-  "landedCost": 14784.64,  // Total cost as number
-  "tradeAgreement": "MFN",  // Or "USMCA", "GSP", etc.
-  "explanation": "Detailed 2-3 sentence explanation"
-}
-
-Use CURRENT 2025/2026 rates. For China to USA, include Section 301 tariffs if applicable. Calculate exact amounts.`;
-
-        const response = await invokeLLM({
-          cacheTtlSeconds: CACHE_WEEK,
-          messages: [
-            {
-              role: "system",
-              content: "You are a customs duty calculation expert with knowledge of current tariff rates, trade agreements, and additional duties. Provide accurate, detailed calculations with full explainability."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        
-        let parsed;
-        if (!content) {
-          console.log('[Tariff] No content from AI, using fallback data');
-          // Fallback data for demonstration
-          parsed = {
-            mfnRate: 0,
-            preferentialRate: 0,
-            additionalDuties: 0,
-            appliedRate: 0,
-            tradeAgreement: "MFN (Normal Trade Relations)",
-            exclusionStatus: "none",
-            dutyAmount: 0,
-            mpf: input.value * 0.003464, // 0.3464% MPF
-            hmf: 0,
-            totalDuties: input.value * 0.003464,
-            landedCost: input.value + (input.freightCost || 0) + (input.insuranceCost || 0) + (input.value * 0.003464),
-            rateSource: "CBP HTS 2025",
-            rationale: `For HTS code ${input.htsCode} from ${input.originCountry} to ${input.destinationCountry}: This product qualifies for 0% duty under normal trade relations. The total cost includes only the Merchandise Processing Fee (MPF) of 0.3464% of the merchandise value. No additional duties or trade remedies apply to this classification.`,
-            alternatives: [
-              { scenario: "If product doesn't meet origin requirements", impact: "May be subject to higher duties or trade remedies" },
-              { scenario: "If classified under different HTS code", impact: "Duty rate may vary" }
-            ],
-            effectiveDate: new Date().toISOString(),
-            breakdown: {
-              customsDuty: 0,
-              mpf: input.value * 0.003464,
-              hmf: 0,
-              section301: 0,
-              antidumping: 0,
-            }
-          };
-        } else {
-          parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        }
-
-        // Save calculation to shipment if linked
         if (input.shipmentId) {
           await db.updateShipment(input.shipmentId, {
             lastCalculation: {
-              appliedRate: parsed.appliedRate || parsed.rate || 0,
-              dutyAmount: parsed.dutyAmount || 0,
-              landedCost: parsed.landedCost || input.value,
-              tradeAgreement: parsed.tradeAgreement,
-              rationale: parsed.rationale,
+              appliedRate: result.appliedRate,
+              dutyAmount: result.dutyAmount,
+              landedCost: result.landedCost,
+              tradeAgreement: result.tradeAgreement,
+              rationale: result.rationale,
               calculatedAt: new Date().toISOString(),
             },
             workflowStep: 2,
             status: "calculating",
           });
         }
-
-        return {
-          mfnRate: parsed.mfnRate || parsed.mfn || 0,
-          preferentialRate: parsed.preferentialRate || parsed.preferential,
-          additionalDuties: parsed.additionalDuties || 0,
-          appliedRate: parsed.appliedRate || parsed.rate || 0,
-          tradeAgreement: parsed.tradeAgreement || parsed.agreement,
-          exclusionStatus: parsed.exclusionStatus || "none",
-          exclusionExpiration: parsed.exclusionExpiration,
-          dutyAmount: parsed.dutyAmount || 0,
-          mpf: parsed.mpf || parsed.merchandiseProcessingFee || 0,
-          hmf: parsed.hmf || parsed.harborMaintenanceFee || 0,
-          totalDuties: parsed.totalDuties || parsed.dutyAmount || 0,
-          landedCost: parsed.landedCost || input.value,
-          rateSource: parsed.rateSource || "CBP HTS 2025",
-          rationale: parsed.rationale || parsed.explanation || "AI-generated calculation",
-          explanation: parsed.explanation || parsed.rationale || "AI-generated calculation",
-          alternatives: parsed.alternatives || [],
-          effectiveDate: parsed.effectiveDate || new Date().toISOString(),
-        };
+        return result;
       }),
   }),
 
   // ============================================================================
-  // REGULATIONS - AI-powered, evergreen
+  // REGULATIONS - curated rules by country and HTS chapter
   // ============================================================================
   regulations: router({
-    search: protectedProcedure
+    search: publicProcedure
       .input(z.object({
         countryCode: z.string(),
         regulationType: z.enum(["all", "import", "export", "licensing", "restrictions"]),
         htsCode: z.string().optional(),
         shipmentId: z.number().optional(),
       }))
-      .query(async ({ input }) => {
-        const prompt = `Find current trade regulations for:
-
-Country: ${input.countryCode}
-Type: ${input.regulationType}
-${input.htsCode ? `HTS Code: ${input.htsCode}` : ''}
-
-Return JSON with this EXACT structure:
-{
-  "regulations": [
-    {
-      "title": "FDA Prior Notice Requirement",
-      "category": "import",  // "import", "export", "licensing", "restriction"
-      "description": "Detailed 2-3 sentence explanation of the requirement",
-      "authority": "FDA",  // Regulatory agency
-      "riskLevel": "high",  // "low", "medium", "high", "critical"
-      "requirements": ["Submit PN 2-15 days before arrival", "Include product details"],
-      "documentation": ["Prior Notice Confirmation", "FDA Registration"],
-      "effectiveDate": "2025-01-01",
-      "source": "21 CFR 1.276",
-      "penalties": "Shipment refusal, detention"
-    }
-  ]
-}
-
-Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/2026 regulations.`;
-
-        const response = await invokeLLM({
-          cacheTtlSeconds: CACHE_WEEK,
-          messages: [
-            {
-              role: "system",
-              content: "You are a trade regulations expert with current knowledge of import/export requirements, licensing, and compliance standards."
-            },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) return [];
-
-        const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        return parsed.regulations || parsed.results || [];
-      }),
+      .query(({ input }) => compliance.regulationsFor(input.countryCode, input.regulationType, input.htsCode)),
   }),
 
   // ============================================================================
@@ -734,81 +467,33 @@ Provide 5-10 relevant regulations for ${input.countryCode}. Use CURRENT 2025/202
   // CHECKLISTS - AI-generated compliance requirements
   // ============================================================================
   checklists: router({
-    generate: protectedProcedure
+    generate: publicProcedure
       .input(z.object({
-        shipmentId: z.number(),
+        shipmentId: z.number().optional(),
         shipmentType: z.enum(["import", "export"]),
         originCountry: z.string(),
         destinationCountry: z.string(),
-        productCategory: z.string(),
+        productCategory: z.string().optional(),
         htsCode: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        await getOwnedShipment(ctx.user, input.shipmentId);
-        const prompt = `Generate compliance checklist for:
+        const items = compliance.checklistFor(input);
 
-Type: ${input.shipmentType}
-From: ${input.originCountry}
-To: ${input.destinationCountry}
-Product: ${input.productCategory}
-${input.htsCode ? `HTS: ${input.htsCode}` : ''}
-
-Return JSON with this EXACT structure:
-{
-  "items": [
-    {
-      "task": "Obtain Commercial Invoice",
-      "description": "Detailed 2-sentence explanation of what's needed and why",
-      "priority": "required",  // "required", "optional", "conditional"
-      "category": "documentation",  // "documentation", "compliance", "inspection", "payment"
-      "documentType": "Commercial Invoice",
-      "authority": "CBP",
-      "riskLevel": "high",  // "low", "medium", "high", "critical"
-      "deadline": "Before shipment",
-      "estimatedTime": "1-2 hours",
-      "consequences": "Shipment delays, fines"
-    }
-  ]
-}
-
-Provide 8-15 actionable checklist items covering documentation, compliance, inspections, and payments.`;
-
-        const response = await invokeLLM({
-          cacheTtlSeconds: CACHE_WEEK,
-          messages: [
-            {
-              role: "system",
-              content: "You are a trade compliance expert who creates comprehensive, actionable checklists for import/export operations."
+        // Save checklist to the shipment when generated from the workflow
+        if (input.shipmentId) {
+          await getOwnedShipment(requireUser(ctx.user), input.shipmentId);
+          await db.updateShipment(input.shipmentId, {
+            workflowStep: 4,
+            status: "reviewing",
+            complianceChecklist: {
+              items,
+              generatedAt: new Date().toISOString(),
             },
-            {
-              role: "user",
-              content: prompt
-            }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const content = response.choices[0]?.message?.content;
-        if (!content) throw new Error("No checklist generated");
-
-        const parsed = JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        const items = (parsed.items || parsed.checklist || []).map((item: any) => ({
-          ...item,
-          completed: false,
-        }));
-
-        // Save checklist to shipment
-        await db.updateShipment(input.shipmentId, {
-          workflowStep: 4,
-          status: "reviewing",
-          complianceChecklist: {
-            items,
-            generatedAt: new Date().toISOString(),
-          },
-        });
+          });
+        }
 
         return {
-          checklistId: input.shipmentId,
+          checklistId: input.shipmentId ?? null,
           items,
         };
       }),
@@ -859,7 +544,7 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
   // UTILITIES - Currency, shipping estimates
   // ============================================================================
   utilities: router({
-    convertCurrency: protectedProcedure
+    convertCurrency: publicProcedure
       .input(z.object({
         amount: z.number(),
         from: z.string().length(3),
@@ -873,7 +558,7 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
         }
       }),
 
-    estimateShipping: protectedProcedure
+    estimateShipping: publicProcedure
       .input(z.object({
         originCountry: z.string(),
         destinationCountry: z.string(),
@@ -958,126 +643,20 @@ Provide 8-15 actionable checklist items covering documentation, compliance, insp
   }),
 
   // ============================================================================
-  // CHAT ASSISTANT
-  // ============================================================================
-  chat: router({
-    send: protectedProcedure
-      .input(z.object({
-        message: z.string().min(1).max(4000),
-        conversationId: z.string().optional(),
-      }))
-      .mutation(async ({ ctx, input }) => {
-        const conversationId = input.conversationId || `conv-${Date.now()}`;
-
-        // Save user message
-        await db.saveChatMessage(ctx.user.id, conversationId, "user" as const, input.message);
-
-        // Get AI response
-        const response = await invokeLLM({
-          maxTokens: 1500,
-          messages: [
-            {
-              role: "system",
-              content: "You are a trade compliance expert assistant. Help users with HTS codes, tariff calculations, regulations, and documentation requirements. Always provide detailed, accurate information with sources."
-            },
-            {
-              role: "user",
-              content: input.message
-            }
-          ],
-        });
-
-        const content = response.choices[0]?.message?.content;
-        const aiMessage = typeof content === 'string' ? content : "I apologize, I couldn't generate a response.";
-
-        // Save AI response
-        await db.saveChatMessage(ctx.user.id, conversationId, "assistant" as const, aiMessage);
-
-        return {
-          message: aiMessage,
-          conversationId,
-        };
-      }),
-
-    getHistory: protectedProcedure
-      .input(z.object({ conversationId: z.string() }))
-      .query(async ({ ctx, input }) => {
-        return await db.getChatHistory(ctx.user.id, input.conversationId);
-      }),
-  }),
-
-  // ============================================================================
   // CERTIFICATE OF ORIGIN
   // ============================================================================
   certificate: router({
 
-    // ── AI Assist: suggest field values for a given trade agreement ──────────
-    aiAssist: protectedProcedure
+    // ── Assist: rule-based suggestions for a given trade agreement ──────────
+    assist: publicProcedure
       .input(z.object({
         tradeAgreement: z.string(),
         exporterCountry: z.string().optional(),
         destinationCountry: z.string().optional(),
         goodsDescription: z.string().optional(),
         htsCode: z.string().optional(),
-        userQuery: z.string().optional(), // free-form question from user
       }))
-      .mutation(async ({ input }) => {
-        const { TRADE_AGREEMENTS, getAgreementById } = await import("../shared/tradeAgreements.js");
-        const agreement = getAgreementById(input.tradeAgreement);
-        const agreementName = agreement?.name || input.tradeAgreement;
-        const criteriaList = agreement?.originCriteria
-          .map(c => `${c.value}: ${c.label} — ${c.description}`)
-          .join("\n") || "";
-
-        const prompt = `You are a trade compliance expert specializing in Certificates of Origin and free trade agreements.
-
-Trade Agreement: ${agreementName}
-Exporter Country: ${input.exporterCountry || "not specified"}
-Destination Country: ${input.destinationCountry || "not specified"}
-Goods Description: ${input.goodsDescription || "not specified"}
-HTS/HS Code: ${input.htsCode || "not specified"}
-User Question: ${input.userQuery || "Please suggest appropriate field values for this certificate."}
-
-Available origin criteria for ${agreementName}:
-${criteriaList}
-
-Provide expert guidance. Return JSON with this EXACT structure:
-{
-  "recommendedCriterion": "A",
-  "criterionExplanation": "Detailed explanation of why this criterion applies",
-  "producerDeclaration": "Suggested producer declaration text",
-  "warnings": ["Any compliance warnings"],
-  "suggestions": ["Actionable suggestions"],
-  "requiredDocuments": ["List of documents needed"],
-  "tradeAgreementNotes": ["Key notes specific to this agreement"],
-  "eligibilityAssessment": "Assessment of whether these goods likely qualify for preferential treatment"
-}`;
-
-        const aiResponse = await invokeLLM({
-          cacheTtlSeconds: CACHE_MONTH,
-          messages: [
-            { role: "system", content: "You are a trade compliance expert. Return only valid JSON." },
-            { role: "user", content: prompt }
-          ],
-          response_format: { type: "json_object" },
-        });
-
-        const content = aiResponse.choices[0]?.message?.content;
-        try {
-          return JSON.parse(typeof content === "string" ? content : JSON.stringify(content));
-        } catch {
-          return {
-            recommendedCriterion: "",
-            criterionExplanation: "Unable to parse AI response.",
-            producerDeclaration: "",
-            warnings: [],
-            suggestions: [],
-            requiredDocuments: agreement?.requiredDocuments || [],
-            tradeAgreementNotes: agreement?.notes || [],
-            eligibilityAssessment: "Please review manually.",
-          };
-        }
-      }),
+      .mutation(({ input }) => compliance.originGuidance(input)),
 
     // ── Get applicable agreements for a country pair ─────────────────────────
     getApplicableAgreements: publicProcedure

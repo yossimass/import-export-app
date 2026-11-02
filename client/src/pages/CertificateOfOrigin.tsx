@@ -200,7 +200,6 @@ export default function CertificateOfOrigin() {
     agreement: any;
   } | null>(null);
   const [activeSection, setActiveSection] = useState<"form" | "preview">("form");
-  const [aiQuery, setAiQuery] = useState("");
   const [aiResult, setAiResult] = useState<any>(null);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
@@ -303,7 +302,7 @@ export default function CertificateOfOrigin() {
     },
   });;
 
-  const aiAssistMutation = trpc.certificate.aiAssist.useMutation({
+  const aiAssistMutation = trpc.certificate.assist.useMutation({
     onSuccess: (data) => {
       setAiResult(data);
       // Auto-apply recommended criterion
@@ -314,9 +313,9 @@ export default function CertificateOfOrigin() {
       if (data.producerDeclaration) {
         setForm(prev => ({ ...prev, producerDeclaration: data.producerDeclaration }));
       }
-      toast.success("AI analysis complete — fields updated");
+      toast.success("Suggestions applied — review the fields");
     },
-    onError: (err) => toast.error(`AI assist failed: ${err.message}`),
+    onError: (err) => toast.error(`Suggestions failed: ${err.message}`),
   });
 
   const handleGenerate = () => {
@@ -338,7 +337,6 @@ export default function CertificateOfOrigin() {
       destinationCountry: form.destinationCountry,
       goodsDescription: form.goodsDescription,
       htsCode: form.htsCode,
-      userQuery: aiQuery || undefined,
     });
   };
 
@@ -383,7 +381,7 @@ export default function CertificateOfOrigin() {
               <h1 className="text-3xl sm:text-4xl font-bold">Certificate of Origin</h1>
             </div>
             <p className="text-muted-foreground">
-              Generate trade-agreement-specific COOs with AI-powered compliance validation
+              Generate trade-agreement-specific COOs with built-in compliance validation
             </p>
           </div>
           {generatedCert && (
@@ -512,13 +510,13 @@ export default function CertificateOfOrigin() {
               </CardContent>
             </Card>
 
-            {/* AI Assist Panel */}
+            {/* Origin Assistant Panel */}
             <Card className="border-2 border-dashed border-purple-300 bg-purple-50/30">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg flex items-center gap-2">
                     <Sparkles className="w-5 h-5 text-purple-600" />
-                    AI Compliance Assistant
+                    Origin Assistant
                   </CardTitle>
                   <Button
                     variant="ghost"
@@ -530,28 +528,18 @@ export default function CertificateOfOrigin() {
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Get AI guidance on origin criteria, eligibility, and required documentation for {selectedAgreement?.shortName}.
+                  Suggested origin criterion, eligibility checks and required documents for {selectedAgreement?.shortName}, based on your HS code and countries.
                 </p>
               </CardHeader>
               {showAiPanel && (
                 <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="aiQuery">Ask a specific question (optional)</Label>
-                    <Textarea
-                      id="aiQuery"
-                      value={aiQuery}
-                      onChange={e => setAiQuery(e.target.value)}
-                      placeholder={`e.g., "Do my cotton t-shirts qualify for USMCA preferential treatment if assembled in Mexico from US yarn?" or leave blank for general guidance.`}
-                      rows={2}
-                    />
-                  </div>
                   <Button
                     onClick={handleAiAssist}
                     disabled={aiAssistMutation.isPending}
                     className="w-full gap-2 bg-purple-700 hover:bg-purple-800 text-white"
                   >
                     {aiAssistMutation.isPending ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing…</>
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Checking…</>
                     ) : (
                       <><Sparkles className="w-4 h-4" /> Analyze & Suggest Fields</>
                     )}
@@ -1007,7 +995,7 @@ export default function CertificateOfOrigin() {
                 </CardHeader>
                 <CardContent className="text-sm text-muted-foreground space-y-3">
                   <p><strong>1. Select a trade agreement</strong> — the form adapts to show the exact fields required for that format (USMCA, CAFTA-DR, EU GSP, etc.).</p>
-                  <p><strong>2. Use AI Assist</strong> — describe your goods and get AI-powered guidance on origin criteria, eligibility, and required documents.</p>
+                  <p><strong>2. Use the Origin Assistant</strong> — enter your HS code and countries to get a suggested origin criterion, eligibility checks and required documents.</p>
                   <p><strong>3. Fill the form</strong> — required fields are marked with <span className="text-red-500 font-bold">*</span>.</p>
                   <p><strong>4. Generate & Download</strong> — get a validated certificate with compliance score and PDF export.</p>
                 </CardContent>

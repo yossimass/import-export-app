@@ -66,7 +66,7 @@ export default function HtsSearch() {
           <div className="w-2 h-12 bg-primary mb-4"></div>
           <h1 className="text-4xl font-bold mb-2">HTS Code Search</h1>
           <p className="text-muted-foreground">
-            AI-powered search with detailed product classification and risk assessment
+            Search the official US Harmonized Tariff Schedule by product description or code
           </p>
         </div>
 

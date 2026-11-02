@@ -13,7 +13,6 @@ const TariffCalculator = lazy(() => import("./pages/TariffCalculator"));
 const Regulations = lazy(() => import("./pages/Regulations"));
 const Documents = lazy(() => import("./pages/Documents"));
 const Checklists = lazy(() => import("./pages/Checklists"));
-const ChatAssistant = lazy(() => import("./pages/ChatAssistant"));
 const Utilities = lazy(() => import("./pages/Utilities"));
 const Alerts = lazy(() => import("./pages/Alerts"));
 const MyShipments = lazy(() => import("./pages/MyShipments"));
@@ -32,7 +31,6 @@ function Router() {
       <Route path={"/regulations"} component={Regulations} />
       <Route path={"/documents"} component={Documents} />
       <Route path={"/checklists"} component={Checklists} />
-      <Route path={"/chat"} component={ChatAssistant} />
       <Route path={"/utilities"} component={Utilities} />
       <Route path={"/alerts"} component={Alerts} />
       <Route path={"/my-shipments"} component={MyShipments} />

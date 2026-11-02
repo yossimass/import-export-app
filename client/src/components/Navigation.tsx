@@ -3,7 +3,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import {
   Search, Calculator, FileText, FolderOpen, CheckSquare,
-  MessageSquare, Settings, Bell, Package, Menu, X,
+  Settings, Bell, Package, Menu, X,
   Wallet, Stamp, User, ShieldCheck, ChevronDown,
 } from "lucide-react";
 import {
@@ -32,7 +32,6 @@ export default function Navigation() {
     { path: "/documents", label: "Documents", icon: FolderOpen },
     { path: "/checklists", label: "Checklists", icon: CheckSquare },
     { path: "/certificate-of-origin", label: "Certificate of Origin", icon: Stamp },
-    { path: "/chat", label: "AI Assistant", icon: MessageSquare },
     { path: "/utilities", label: "Utilities", icon: Settings },
   ];
 

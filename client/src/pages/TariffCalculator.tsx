@@ -39,6 +39,7 @@ export default function TariffCalculator() {
     freightCost: "500",
     insuranceCost: "100",
     additionalDutyRate: "",
+    dutyRate: "",
   });
 
   // Pre-populate form with shipment data
@@ -120,6 +121,7 @@ export default function TariffCalculator() {
       freightCost: formData.freightCost ? parseFloat(formData.freightCost) : undefined,
       insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
       additionalDutyRate: formData.additionalDutyRate ? parseFloat(formData.additionalDutyRate) : undefined,
+      dutyRate: formData.dutyRate ? parseFloat(formData.dutyRate) : undefined,
     });
   };
 
@@ -256,6 +258,20 @@ export default function TariffCalculator() {
                     onChange={(e) => setFormData({ ...formData, insuranceCost: e.target.value })}
                   />
                 </div>
+                {formData.destinationCountry && formData.destinationCountry !== "USA" && (
+                  <div className="col-span-2">
+                    <Label>Import Duty Rate % (destination tariff)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 12"
+                      value={formData.dutyRate}
+                      onChange={(e) => setFormData({ ...formData, dutyRate: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Official rates are built in for US imports only. For other destinations, enter the rate from that country's tariff.
+                    </p>
+                  </div>
+                )}
                 <div className="col-span-2">
                   <Label>Additional Duty % (Section 301/232, optional)</Label>
                   <Input
