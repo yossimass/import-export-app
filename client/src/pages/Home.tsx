@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Link } from "wouter";
-import { Search, Calculator, FileText, CheckSquare, MessageSquare, Wrench } from "lucide-react";
+import { Search, Calculator, FileText, CheckSquare, Wrench } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
 export default function Home() {
@@ -25,7 +25,7 @@ export default function Home() {
                 iTCP: Intelligent Trade Compliance
               </h1>
               <p className="text-base sm:text-lg lg:text-xl text-muted-foreground mb-6 sm:mb-8 leading-relaxed">
-                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance—powered by AI and built for global trade professionals.
+                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance—built on official tariff data for global trade professionals.
               </p>
               <Link href="/hts-search">
                 <Button size="lg" className="text-base sm:text-lg px-6 sm:px-8 w-full sm:w-auto">
@@ -113,7 +113,7 @@ export default function Home() {
                 <Search className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">HTS Code Search</h3>
                 <p className="text-muted-foreground">
-                  AI-powered search with detailed product classification and risk assessment
+                  Search the official US tariff schedule by product or code, with duty rates
                 </p>
               </Card>
             </Link>
@@ -153,17 +153,17 @@ export default function Home() {
                 <CheckSquare className="w-12 h-12 mb-4 text-primary" />
                 <h3 className="text-xl font-bold mb-2">Compliance Checklists</h3>
                 <p className="text-muted-foreground">
-                  AI-generated requirements for your specific shipment and route
+                  Requirements for your specific shipment, product and route
                 </p>
               </Card>
             </Link>
 
-            <Link href="/chat-assistant">
+            <Link href="/certificate-of-origin">
               <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <MessageSquare className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">AI Assistant</h3>
+                <FileText className="w-12 h-12 mb-4 text-primary" />
+                <h3 className="text-xl font-bold mb-2">Certificate of Origin</h3>
                 <p className="text-muted-foreground">
-                  Get expert answers on trade compliance, regulations, and documentation
+                  Build and validate certificates for USMCA, KORUS, CAFTA-DR and more
                 </p>
               </Card>
             </Link>

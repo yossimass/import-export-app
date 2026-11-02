@@ -38,6 +38,8 @@ export default function TariffCalculator() {
     incoterm: "FOB",
     freightCost: "500",
     insuranceCost: "100",
+    additionalDutyRate: "",
+    dutyRate: "",
   });
 
   // Pre-populate form with shipment data
@@ -91,7 +93,6 @@ export default function TariffCalculator() {
 
   const calculateMutation = trpc.tariff.calculate.useMutation({
     onSuccess: (data) => {
-      console.log('[TariffCalculator] Calculation success, data:', data);
       setResult(data);
       toast.success("Calculation complete!");
     },
@@ -102,16 +103,12 @@ export default function TariffCalculator() {
   });
 
   const handleCalculate = () => {
-    console.log('[TariffCalculator] handleCalculate called');
-    console.log('[TariffCalculator] formData:', formData);
     
     if (!formData.htsCode || !formData.originCountry || !formData.destinationCountry || !formData.value) {
       toast.error("Please fill in all required fields");
-      console.log('[TariffCalculator] Missing required fields');
       return;
     }
 
-    console.log('[TariffCalculator] Calling mutation with params');
 
     calculateMutation.mutate({
       htsCode: formData.htsCode,
@@ -123,10 +120,11 @@ export default function TariffCalculator() {
       incoterm: formData.incoterm || undefined,
       freightCost: formData.freightCost ? parseFloat(formData.freightCost) : undefined,
       insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
+      additionalDutyRate: formData.additionalDutyRate ? parseFloat(formData.additionalDutyRate) : undefined,
+      dutyRate: formData.dutyRate ? parseFloat(formData.dutyRate) : undefined,
     });
   };
 
-  console.log('[TariffCalculator] Current result:', result, 'isPending:', calculateMutation.isPending);
 
   return (
     <div className="min-h-screen">
@@ -258,6 +256,29 @@ export default function TariffCalculator() {
                     type="number"
                     value={formData.insuranceCost}
                     onChange={(e) => setFormData({ ...formData, insuranceCost: e.target.value })}
+                  />
+                </div>
+                {formData.destinationCountry && formData.destinationCountry !== "USA" && (
+                  <div className="col-span-2">
+                    <Label>Import Duty Rate % (destination tariff)</Label>
+                    <Input
+                      type="number"
+                      placeholder="e.g. 12"
+                      value={formData.dutyRate}
+                      onChange={(e) => setFormData({ ...formData, dutyRate: e.target.value })}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Official rates are built in for US imports only. For other destinations, enter the rate from that country's tariff.
+                    </p>
+                  </div>
+                )}
+                <div className="col-span-2">
+                  <Label>Additional Duty % (Section 301/232, optional)</Label>
+                  <Input
+                    type="number"
+                    placeholder="e.g. 25"
+                    value={formData.additionalDutyRate}
+                    onChange={(e) => setFormData({ ...formData, additionalDutyRate: e.target.value })}
                   />
                 </div>
               </div>

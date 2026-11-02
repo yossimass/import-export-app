@@ -157,7 +157,7 @@ export async function deductCredits(
   const result = await db
     .update(users)
     .set({
-      credits: sql`credits - ${creditCost}`,
+      credits: sql`${users.credits} - ${creditCost}`,
     })
     .where(eq(users.id, userId));
 
@@ -198,7 +198,7 @@ export async function addCredits(
   await db
     .update(users)
     .set({
-      credits: sql`credits + ${amount}`,
+      credits: sql`${users.credits} + ${amount}`,
     })
     .where(eq(users.id, userId));
 

@@ -1,6 +1,6 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import { getOrCreateWorkspaceUser } from "./auth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -14,9 +14,10 @@ export async function createContext(
   let user: User | null = null;
 
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    user = (await getOrCreateWorkspaceUser(opts.req, opts.res)) ?? null;
   } catch (error) {
-    // Authentication is optional for public procedures.
+    // e.g. database unavailable; public procedures still work
+    console.error("[Auth] Workspace lookup failed", error);
     user = null;
   }
 

@@ -44,7 +44,7 @@ export default function Regulations() {
           <div className="w-2 h-12 bg-primary mb-4"></div>
           <h1 className="text-4xl font-bold mb-2">Trade Regulations</h1>
           <p className="text-muted-foreground">
-            AI-powered lookup of country-specific trade regulations and requirements
+            Key import/export requirements by country, plus product-specific rules for your HTS code
           </p>
         </div>
 
@@ -93,7 +93,7 @@ export default function Regulations() {
                   if (!regulations) return;
                   exportRegulationsPDF({
                     country,
-                    regulations,
+                    regulations: regulations.map(r => ({ ...r, documents: r.documentation })),
                   });
                   toast.success('Regulations exported as PDF');
                 }}

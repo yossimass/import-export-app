@@ -1,15 +1,14 @@
 import { defineConfig } from "drizzle-kit";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required to run drizzle commands");
-}
+// Netlify applies the SQL files in netlify/database/migrations on every deploy.
+// After changing drizzle/schema.ts: run `pnpm db:generate`, then copy the new
+// file from drizzle/ into netlify/database/migrations/ with a timestamp prefix.
+const connectionString = process.env.DATABASE_URL ?? process.env.NETLIFY_DB_URL;
 
 export default defineConfig({
   schema: "./drizzle/schema.ts",
   out: "./drizzle",
-  dialect: "mysql",
-  dbCredentials: {
-    url: connectionString,
-  },
+  dialect: "postgresql",
+  // Only needed for migrate/push against a non-Netlify database
+  dbCredentials: { url: connectionString ?? "" },
 });

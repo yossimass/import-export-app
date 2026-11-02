@@ -162,7 +162,7 @@ describe("certificate.getAgreementDefinition", () => {
   });
 });
 
-// ─── tRPC: generate + list (requires LLM + DB, extended timeout) ─────────────
+// ─── tRPC: generate + list (requires DB, extended timeout) ─────────────
 describe("certificate.generate with trade agreement", () => {
   it("should generate a USMCA certificate with correct number format", async () => {
     const result = await caller.certificate.generate({

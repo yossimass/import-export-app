@@ -46,7 +46,7 @@ export default function Credits() {
       tariff_calc: "Tariff Calculator",
       regulations: "Regulations Lookup",
       checklist: "Compliance Checklist",
-      chat: "AI Chat Assistant",
+      chat: "Chat Assistant (retired)",
     };
     return names[feature] || feature;
   };
@@ -177,7 +177,7 @@ export default function Credits() {
               Purchase Credits
             </CardTitle>
             <CardDescription>
-              Choose a credit package to continue using AI-powered features
+              Credit packages are not needed during the alpha — all features are free
             </CardDescription>
           </CardHeader>
           <CardContent>

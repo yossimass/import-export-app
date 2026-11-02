@@ -1,25 +1,41 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, boolean } from "drizzle-orm/mysql-core";
+import { boolean, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp as pgTimestamp, varchar } from "drizzle-orm/pg-core";
+
+// All timestamps are stored as timestamptz (UTC-safe across environments)
+const timestamp = (name: string) => pgTimestamp(name, { withTimezone: true });
+
+// Postgres enums are named types shared across tables, so each needs a unique name
+export const userRole = pgEnum("user_role", ["user", "admin"]);
+export const shipmentStatus = pgEnum("shipment_status", ["draft", "calculating", "documenting", "reviewing", "complete"]);
+export const riskLevel = pgEnum("risk_level", ["low", "medium", "high"]);
+export const cooStatus = pgEnum("coo_status", ["none", "draft", "issued"]);
+export const documentStatus = pgEnum("document_status", ["uploaded", "verified", "rejected"]);
+export const alertType = pgEnum("alert_type", ["tariff_change", "regulation_update", "license_renewal", "shipment_status"]);
+export const chatRole = pgEnum("chat_role", ["user", "assistant"]);
+export const creditTransactionType = pgEnum("credit_transaction_type", ["purchase", "subscription_refill", "usage", "refund", "admin_adjustment"]);
+export const subscriptionInterval = pgEnum("subscription_interval", ["month", "year"]);
+export const subscriptionStatus = pgEnum("subscription_status", ["active", "cancelled", "past_due", "unpaid"]);
+export const certificateStatus = pgEnum("certificate_status", ["draft", "issued", "revoked"]);
 
 /**
  * Core user table backing auth flow.
  */
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
-  openId: varchar("openId", { length: 64 }).notNull().unique(),
+export const users = pgTable("users", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(), // Clerk user id
   name: text("name"),
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
-  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  role: userRole("role").default("user").notNull(),
   
   // Credits system
-  credits: decimal("credits", { precision: 15, scale: 4 }).default("0").notNull(),
-  initialSearchesUsed: int("initialSearchesUsed").default(0).notNull(), // Free tier: 5 initial searches
-  monthlySearchesUsed: int("monthlySearchesUsed").default(0).notNull(), // Free tier: 1 search/month
+  credits: numeric("credits", { precision: 15, scale: 4 }).default("0").notNull(),
+  initialSearchesUsed: integer("initialSearchesUsed").default(0).notNull(), // Free tier: 5 initial searches
+  monthlySearchesUsed: integer("monthlySearchesUsed").default(0).notNull(), // Free tier: 1 search/month
   lastMonthlyReset: timestamp("lastMonthlyReset").defaultNow().notNull(),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
@@ -31,13 +47,13 @@ export type InsertUser = typeof users.$inferInsert;
  * Stores user's shipment workflow state and decisions
  * All trade data (HTS, tariffs, regulations) is fetched from AI in real-time
  */
-export const shipments = mysqlTable("shipments", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const shipments = pgTable("shipments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
   
   // Workflow state
-  status: mysqlEnum("status", ["draft", "calculating", "documenting", "reviewing", "complete"]).default("draft").notNull(),
-  workflowStep: int("workflowStep").default(1).notNull(), // 1=HTS, 2=Tariff, 3=Docs, 4=Compliance
+  status: shipmentStatus("status").default("draft").notNull(),
+  workflowStep: integer("workflowStep").default(1).notNull(), // 1=HTS, 2=Tariff, 3=Docs, 4=Compliance
   
   // User inputs (saved for continuity)
   shipmentName: varchar("shipmentName", { length: 255 }).notNull(),
@@ -45,18 +61,18 @@ export const shipments = mysqlTable("shipments", {
   htsCode: varchar("htsCode", { length: 20 }),
   originCountry: varchar("originCountry", { length: 3 }),
   destinationCountry: varchar("destinationCountry", { length: 3 }),
-  quantity: decimal("quantity", { precision: 15, scale: 4 }),
-  weight: decimal("weight", { precision: 15, scale: 4 }),
+  quantity: numeric("quantity", { precision: 15, scale: 4 }),
+  weight: numeric("weight", { precision: 15, scale: 4 }),
   weightUnit: varchar("weightUnit", { length: 10 }),
-  value: decimal("value", { precision: 15, scale: 2 }),
+  value: numeric("value", { precision: 15, scale: 2 }),
   currency: varchar("currency", { length: 3 }).default("USD"),
   incoterm: varchar("incoterm", { length: 10 }),
-  freightCost: decimal("freightCost", { precision: 15, scale: 2 }),
-  insuranceCost: decimal("insuranceCost", { precision: 15, scale: 2 }),
+  freightCost: numeric("freightCost", { precision: 15, scale: 2 }),
+  insuranceCost: numeric("insuranceCost", { precision: 15, scale: 2 }),
   
   // Cached AI results (for display continuity, not source of truth)
-  lastCalculation: json("lastCalculation").$type<{
-    appliedRate: number;
+  lastCalculation: jsonb("lastCalculation").$type<{
+    appliedRate: number | string; // e.g. "16.5%" from the HTS schedule
     dutyAmount: number;
     landedCost: number;
     tradeAgreement?: string;
@@ -65,7 +81,7 @@ export const shipments = mysqlTable("shipments", {
   }>(),
   
   // Compliance checklist (cached AI-generated checklist)
-  complianceChecklist: json("complianceChecklist").$type<{
+  complianceChecklist: jsonb("complianceChecklist").$type<{
     items: Array<{
       task: string;
       description: string;
@@ -80,7 +96,7 @@ export const shipments = mysqlTable("shipments", {
   }>(),
   
   // User decisions and overrides
-  userOverrides: json("userOverrides").$type<Array<{
+  userOverrides: jsonb("userOverrides").$type<Array<{
     field: string;
     originalValue: any;
     newValue: any;
@@ -89,19 +105,19 @@ export const shipments = mysqlTable("shipments", {
   }>>(),
   
   // Risk assessment (AI-generated, cached)
-  riskScore: int("riskScore"),
-  riskLevel: mysqlEnum("riskLevel", ["low", "medium", "high"]),
+  riskScore: integer("riskScore"),
+  riskLevel: riskLevel("riskLevel"),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
   completedAt: timestamp("completedAt"),
 
   // Certificate of Origin linkage
-  cooStatus: mysqlEnum("cooStatus", ["none", "draft", "issued"]).default("none").notNull(),
-  cooId: int("cooId"),
+  cooStatus: cooStatus("cooStatus").default("none").notNull(),
+  cooId: integer("cooId"),
 
   // Purchase Order import data (extracted from uploaded PO)
-  poData: json("poData").$type<{
+  poData: jsonb("poData").$type<{
     poNumber?: string;
     poDate?: string;
     buyerName?: string;
@@ -129,7 +145,7 @@ export const shipments = mysqlTable("shipments", {
     fileUrl?: string;
     extractedAt?: string;
   }>(),
-});
+}, t => [index("shipments_user_idx").on(t.userId, t.updatedAt)]);
 
 export type Shipment = typeof shipments.$inferSelect;
 export type InsertShipment = typeof shipments.$inferInsert;
@@ -137,22 +153,22 @@ export type InsertShipment = typeof shipments.$inferInsert;
 /**
  * Documents - User-uploaded files linked to shipments
  */
-export const documents = mysqlTable("documents", {
-  id: int("id").autoincrement().primaryKey(),
-  shipmentId: int("shipmentId"),
-  userId: int("userId").notNull(),
+export const documents = pgTable("documents", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  shipmentId: integer("shipmentId"),
+  userId: integer("userId").notNull(),
   
   documentType: varchar("documentType", { length: 100 }).notNull(),
   fileName: varchar("fileName", { length: 255 }).notNull(),
   fileKey: varchar("fileKey", { length: 500 }).notNull(),
   fileUrl: varchar("fileUrl", { length: 1000 }).notNull(),
   mimeType: varchar("mimeType", { length: 100 }),
-  fileSize: int("fileSize"),
+  fileSize: integer("fileSize"),
   
-  status: mysqlEnum("status", ["uploaded", "verified", "rejected"]).default("uploaded"),
+  status: documentStatus("status").default("uploaded"),
   
   uploadedAt: timestamp("uploadedAt").defaultNow().notNull(),
-});
+}, t => [index("documents_user_idx").on(t.userId), index("documents_shipment_idx").on(t.shipmentId)]);
 
 export type Document = typeof documents.$inferSelect;
 export type InsertDocument = typeof documents.$inferInsert;
@@ -160,22 +176,22 @@ export type InsertDocument = typeof documents.$inferInsert;
 /**
  * Alerts - User notification subscriptions
  */
-export const alerts = mysqlTable("alerts", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const alerts = pgTable("alerts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
   
-  alertType: mysqlEnum("alertType", ["tariff_change", "regulation_update", "license_renewal", "shipment_status"]).notNull(),
+  alertType: alertType("alertType").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message").notNull(),
   
   htsCode: varchar("htsCode", { length: 20 }),
   countryCode: varchar("countryCode", { length: 3 }),
-  shipmentId: int("shipmentId"),
+  shipmentId: integer("shipmentId"),
   
   read: boolean("read").default(false),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, t => [index("alerts_user_idx").on(t.userId)]);
 
 export type Alert = typeof alerts.$inferSelect;
 export type InsertAlert = typeof alerts.$inferInsert;
@@ -183,16 +199,16 @@ export type InsertAlert = typeof alerts.$inferInsert;
 /**
  * Chat Messages - AI assistant conversation history
  */
-export const chatMessages = mysqlTable("chatMessages", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const chatMessages = pgTable("chatMessages", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
   conversationId: varchar("conversationId", { length: 100 }).notNull(),
   
-  role: mysqlEnum("role", ["user", "assistant"]).notNull(),
+  role: chatRole("role").notNull(),
   content: text("content").notNull(),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, t => [index("chat_messages_conversation_idx").on(t.userId, t.conversationId)]);
 
 export type ChatMessage = typeof chatMessages.$inferSelect;
 export type InsertChatMessage = typeof chatMessages.$inferInsert;
@@ -200,17 +216,17 @@ export type InsertChatMessage = typeof chatMessages.$inferInsert;
 /**
  * Checklists - Generated compliance checklists for shipments
  */
-export const checklists = mysqlTable("checklists", {
-  id: int("id").autoincrement().primaryKey(),
-  shipmentId: int("shipmentId").notNull(),
-  userId: int("userId").notNull(),
+export const checklists = pgTable("checklists", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  shipmentId: integer("shipmentId").notNull(),
+  userId: integer("userId").notNull(),
   
   htsCode: varchar("htsCode", { length: 20 }),
   originCountry: varchar("originCountry", { length: 3 }),
   destinationCountry: varchar("destinationCountry", { length: 3 }),
   
   // Checklist items stored as JSON array
-  items: json("items").$type<Array<{
+  items: jsonb("items").$type<Array<{
     task: string;
     description: string;
     priority: string;
@@ -222,8 +238,8 @@ export const checklists = mysqlTable("checklists", {
   }>>().notNull(),
   
   generatedAt: timestamp("generatedAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, t => [index("checklists_shipment_idx").on(t.shipmentId)]);
 
 export type Checklist = typeof checklists.$inferSelect;
 export type InsertChecklist = typeof checklists.$inferInsert;
@@ -231,27 +247,27 @@ export type InsertChecklist = typeof checklists.$inferInsert;
 /**
  * Credit Transactions - Track all credit additions and deductions
  */
-export const creditTransactions = mysqlTable("creditTransactions", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const creditTransactions = pgTable("creditTransactions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
   
-  amount: decimal("amount", { precision: 15, scale: 4 }).notNull(), // Positive for additions, negative for deductions
-  balanceAfter: decimal("balanceAfter", { precision: 15, scale: 4 }).notNull(),
+  amount: numeric("amount", { precision: 15, scale: 4 }).notNull(), // Positive for additions, negative for deductions
+  balanceAfter: numeric("balanceAfter", { precision: 15, scale: 4 }).notNull(),
   
-  type: mysqlEnum("type", ["purchase", "subscription_refill", "usage", "refund", "admin_adjustment"]).notNull(),
+  type: creditTransactionType("type").notNull(),
   description: text("description").notNull(),
   
   // LLM usage tracking (for usage transactions)
-  llmCost: decimal("llmCost", { precision: 15, scale: 6 }), // Actual LLM cost in USD
-  markupRate: decimal("markupRate", { precision: 5, scale: 2 }), // e.g., 7.00 for 700%
+  llmCost: numeric("llmCost", { precision: 15, scale: 6 }), // Actual LLM cost in USD
+  markupRate: numeric("markupRate", { precision: 5, scale: 2 }), // e.g., 7.00 for 700%
   
   // Related entities
   featureUsed: varchar("featureUsed", { length: 100 }), // "hts_search", "tariff_calc", etc.
-  shipmentId: int("shipmentId"),
+  shipmentId: integer("shipmentId"),
   stripePaymentIntentId: varchar("stripePaymentIntentId", { length: 255 }),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+}, t => [index("credit_transactions_user_idx").on(t.userId, t.createdAt)]);
 
 export type CreditTransaction = typeof creditTransactions.$inferSelect;
 export type InsertCreditTransaction = typeof creditTransactions.$inferInsert;
@@ -259,27 +275,27 @@ export type InsertCreditTransaction = typeof creditTransactions.$inferInsert;
 /**
  * Subscriptions - Track recurring credit subscriptions
  */
-export const subscriptions = mysqlTable("subscriptions", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
+export const subscriptions = pgTable("subscriptions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
   
   stripeSubscriptionId: varchar("stripeSubscriptionId", { length: 255 }).notNull().unique(),
   stripeCustomerId: varchar("stripeCustomerId", { length: 255 }).notNull(),
   stripePriceId: varchar("stripePriceId", { length: 255 }).notNull(),
   
   tier: varchar("tier", { length: 50 }).notNull(), // "$10", "$20", "$50", etc.
-  interval: mysqlEnum("interval", ["month", "year"]).notNull(),
-  creditsPerPeriod: decimal("creditsPerPeriod", { precision: 15, scale: 4 }).notNull(),
+  interval: subscriptionInterval("interval").notNull(),
+  creditsPerPeriod: numeric("creditsPerPeriod", { precision: 15, scale: 4 }).notNull(),
   
-  status: mysqlEnum("status", ["active", "cancelled", "past_due", "unpaid"]).notNull(),
+  status: subscriptionStatus("status").notNull(),
   
   currentPeriodStart: timestamp("currentPeriodStart"),
   currentPeriodEnd: timestamp("currentPeriodEnd"),
   cancelAtPeriodEnd: boolean("cancelAtPeriodEnd").default(false),
   
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, t => [index("subscriptions_user_idx").on(t.userId)]);
 
 export type Subscription = typeof subscriptions.$inferSelect;
 export type InsertSubscription = typeof subscriptions.$inferInsert;
@@ -288,16 +304,16 @@ export type InsertSubscription = typeof subscriptions.$inferInsert;
  * Certificates of Origin
  * Stores generated certificates linked to shipments
  */
-export const certificates = mysqlTable("certificates", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId").notNull(),
-  shipmentId: int("shipmentId"),
+export const certificates = pgTable("certificates", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("userId").notNull(),
+  shipmentId: integer("shipmentId"),
 
   // Certificate metadata
   certificateNumber: varchar("certificateNumber", { length: 50 }).notNull(),
-  status: mysqlEnum("status", ["draft", "issued", "revoked"]).default("draft").notNull(),
+  status: certificateStatus("status").default("draft").notNull(),
   tradeAgreement: varchar("tradeAgreement", { length: 50 }).default("GENERIC"),
-  agreementFields: json("agreementFields").$type<Record<string, string>>(),
+  agreementFields: jsonb("agreementFields").$type<Record<string, string>>(),
 
   // Exporter info
   exporterName: varchar("exporterName", { length: 255 }).notNull(),
@@ -338,7 +354,7 @@ export const certificates = mysqlTable("certificates", {
   issuePlace: varchar("issuePlace", { length: 255 }),
 
   // AI validation results
-  validationResult: json("validationResult").$type<{
+  validationResult: jsonb("validationResult").$type<{
     isValid: boolean;
     warnings: string[];
     suggestions: string[];
@@ -349,8 +365,8 @@ export const certificates = mysqlTable("certificates", {
   pdfUrl: text("pdfUrl"),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+  updatedAt: timestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),
+}, t => [index("certificates_user_idx").on(t.userId), index("certificates_shipment_idx").on(t.shipmentId)]);
 
 export type Certificate = typeof certificates.$inferSelect;
 export type InsertCertificate = typeof certificates.$inferInsert;
