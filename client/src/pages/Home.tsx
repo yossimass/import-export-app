@@ -1,175 +1,132 @@
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { Link, useLocation } from "wouter";
+import { ArrowRight, Calculator, FolderOpen, ListChecks, Scale, Search, Sparkles, Stamp, Wrench, Package } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Link } from "wouter";
-import { Search, Calculator, FileText, CheckSquare, Wrench } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { trpc } from "@/lib/trpc";
+import { useAi } from "@/lib/ai";
+import { AiSettingsDialog } from "@/components/app/AiSettings";
+
+const STEPS = [
+  { path: "/hts-search", label: "Classify", body: "Find the HTS code and its official duty rate.", icon: Search },
+  { path: "/tariff-calculator", label: "Duties & landed cost", body: "Duties, trade-agreement savings and CBP fees.", icon: Calculator },
+  { path: "/documents", label: "Documents", body: "Keep invoices, POs and certificates together.", icon: FolderOpen },
+  { path: "/checklists", label: "Compliance", body: "Permits, filings and deadlines for the route.", icon: ListChecks },
+];
+
+const REFERENCE = [
+  { path: "/regulations", label: "Regulations", body: "Requirements by country and product.", icon: Scale },
+  { path: "/certificate-of-origin", label: "Certificate of origin", body: "USMCA, KORUS, CAFTA-DR, AGOA, EU GSP.", icon: Stamp },
+  { path: "/utilities", label: "Currency & freight", body: "Live FX rates and freight estimates.", icon: Wrench },
+];
+
+const STEP_PATHS = ["/hts-search", "/tariff-calculator", "/documents", "/checklists"];
 
 export default function Home() {
-  const { data: recentShipments } = trpc.shipments.recent.useQuery({ limit: 3 });
+  const [, setLocation] = useLocation();
+  const [q, setQ] = useState("");
+  const [aiOpen, setAiOpen] = useState(false);
+  const { mode, label } = useAi();
+  const { data: recent } = trpc.shipments.recent.useQuery({ limit: 4 });
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <main className="flex-1">
-        {/* Hero Section */}
-        <section className="container py-8 sm:py-12 md:py-20">
-          <div className="grid lg:grid-cols-2 gap-8 lg:gap-12 items-center">
-            <div>
-              <div className="flex items-center gap-3 sm:gap-4 mb-4 sm:mb-6">
-                <img src="https://files.manuscdn.com/user_upload_by_module/session_file/93705925/ChEDaPiGwxAxXWSe.png" alt="CochitoCorp" className="w-12 h-12 sm:w-16 sm:h-16" />
-                <div>
-                  <h2 className="text-lg sm:text-2xl font-bold">CochitoCorp</h2>
-                  <p className="text-xs sm:text-sm text-muted-foreground">International Trade Compliance Platform</p>
-                </div>
-              </div>
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4 sm:mb-6 leading-tight">
-                iTCP: Intelligent Trade Compliance
-              </h1>
-              <p className="text-base sm:text-lg lg:text-xl text-muted-foreground mb-6 sm:mb-8 leading-relaxed">
-                Navigate import/export regulations with precision. Access HTS codes, calculate tariffs, manage documents, and ensure compliance—built on official tariff data for global trade professionals.
-              </p>
-              <Link href="/hts-search">
-                <Button size="lg" className="text-base sm:text-lg px-6 sm:px-8 w-full sm:w-auto">
-                  Start Searching →
-                </Button>
-              </Link>
-            </div>
-            
-            {/* Decorative elements - hidden on mobile to prevent overlap */}
-            <div className="relative hidden lg:block">
-              <div className="absolute top-0 right-0 w-48 h-48 xl:w-64 xl:h-64 border-4 border-border"></div>
-              <div className="absolute bottom-0 left-12 w-48 h-48 xl:w-64 xl:h-64 bg-primary"></div>
-            </div>
+    <div className="space-y-8">
+      <section className="rounded-2xl border bg-card p-6 sm:p-8">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-primary">International trade compliance</p>
+        <h1 className="max-w-2xl text-2xl font-semibold tracking-tight sm:text-3xl">Classify, cost and clear your shipments, from official data.</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+          HTS codes and US duty rates come from the USITC schedule; fees from CBP. Regulations and checklists come from built-in rules — and get sharper with AI when it's on.
+        </p>
+        <form className="mt-5 flex max-w-xl gap-2" onSubmit={e => { e.preventDefault(); if (q.trim()) setLocation(`/hts-search?q=${encodeURIComponent(q.trim())}`); }}>
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input value={q} onChange={e => setQ(e.target.value)} placeholder="What are you shipping? e.g. cotton t-shirts" className="h-11 pl-9" />
           </div>
-        </section>
+          <Button type="submit" size="lg" className="h-11">Classify</Button>
+        </form>
+      </section>
 
-        {/* Recent Shipments */}
-        {recentShipments && recentShipments.length > 0 && (
-          <section className="container py-12 border-t-2 border-border">
-            <h2 className="text-2xl font-bold mb-6">My Workflows</h2>
-            <div className="grid md:grid-cols-3 gap-6">
-              {recentShipments.map((shipment) => {
-                const workflowSteps = [
-                  { id: 1, label: "HTS Code", path: "/hts-search" },
-                  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
-                  { id: 3, label: "Documents", path: "/documents" },
-                  { id: 4, label: "Compliance", path: "/checklists" },
-                ];
-                const currentStep = shipment.workflowStep || 1;
-                const nextStepPath = workflowSteps.find(s => s.id === currentStep)?.path || "/hts-search";
-                const progress = (currentStep / 4) * 100;
-                
+      <section>
+        <h2 className="mb-3 text-sm font-semibold">Shipment workflow</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {STEPS.map(({ path, label, body, icon: Icon }, i) => (
+            <Link key={path} href={path}>
+              <Card className="h-full gap-2 p-4 transition-shadow hover:shadow-md">
+                <div className="flex items-center justify-between">
+                  <span className="grid size-8 place-items-center rounded-lg bg-primary/10 text-primary"><Icon className="size-4" /></span>
+                  <span className="text-xs text-muted-foreground">Step {i + 1}</span>
+                </div>
+                <p className="font-medium">{label}</p>
+                <p className="text-sm text-muted-foreground">{body}</p>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <section className="lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Recent shipments</h2>
+            <Link href="/my-shipments" className="text-xs text-primary hover:underline">All shipments</Link>
+          </div>
+          {recent && recent.length > 0 ? (
+            <Card className="gap-0 divide-y p-0">
+              {recent.map(s => {
+                const step = Math.min(Math.max(s.workflowStep || 1, 1), 4);
                 return (
-                  <Card key={shipment.id} className="p-6">
-                    <div className="flex items-start justify-between mb-4">
-                      <h3 className="font-bold">{shipment.shipmentName}</h3>
-                      <span className={`px-2 py-1 text-xs font-mono ${
-                        shipment.status === 'complete' ? 'bg-green-100 text-green-800' :
-                        shipment.status === 'reviewing' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {shipment.status}
-                      </span>
-                    </div>
-                    
-                    {/* Progress Bar */}
-                    <div className="mb-4">
-                      <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                        <span>Step {currentStep} of 4</span>
-                        <span>{Math.round(progress)}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 h-2 rounded-full">
-                        <div 
-                          className="bg-primary h-2 rounded-full transition-all"
-                          style={{ width: `${progress}%` }}
-                        />
-                      </div>
-                    </div>
-                    
-                    {shipment.htsCode && (
-                      <p className="text-sm text-muted-foreground mb-2">HTS: {shipment.htsCode}</p>
-                    )}
-                    {shipment.originCountry && shipment.destinationCountry && (
-                      <p className="text-sm text-muted-foreground mb-4">
-                        {shipment.originCountry} → {shipment.destinationCountry}
+                  <Link key={s.id} href={`${STEP_PATHS[step - 1]}?shipmentId=${s.id}`} className="flex items-center gap-4 px-4 py-3 hover:bg-accent/50">
+                    <Package className="size-4 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{s.shipmentName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[s.htsCode && `HTS ${s.htsCode}`, s.originCountry && s.destinationCountry && `${s.originCountry} → ${s.destinationCountry}`].filter(Boolean).join(" · ") || "Not classified yet"}
                       </p>
-                    )}
-                    <Link href={`${nextStepPath}?shipmentId=${shipment.id}`}>
-                      <Button variant="outline" size="sm" className="w-full">
-                        Continue Workflow →
-                      </Button>
-                    </Link>
-                  </Card>
+                    </div>
+                    <div className="hidden w-28 sm:block">
+                      <Progress value={(step / 4) * 100} className="h-1.5" />
+                      <p className="mt-1 text-right text-[11px] text-muted-foreground">Step {step} of 4</p>
+                    </div>
+                    <ArrowRight className="size-4 text-muted-foreground" />
+                  </Link>
                 );
               })}
-            </div>
-          </section>
-        )}
-
-        {/* Features Grid */}
-        <section className="container py-8 sm:py-12 md:py-16">
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 md:gap-8">
-            <Link href="/hts-search">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <Search className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">HTS Code Search</h3>
-                <p className="text-muted-foreground">
-                  Search the official US tariff schedule by product or code, with duty rates
-                </p>
-              </Card>
-            </Link>
-
-            <Link href="/tariff-calculator">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <Calculator className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">Tariff Calculator</h3>
-                <p className="text-muted-foreground">
-                  Calculate duties with MFN rates, trade agreements, and landed cost breakdown
-                </p>
-              </Card>
-            </Link>
-
-            <Link href="/regulations">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <FileText className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">Trade Regulations</h3>
-                <p className="text-muted-foreground">
-                  Current import/export requirements and compliance standards by country
-                </p>
-              </Card>
-            </Link>
-
-            <Link href="/documents">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <FileText className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">Document Management</h3>
-                <p className="text-muted-foreground">
-                  Secure cloud storage for trade documents with shipment linking
-                </p>
-              </Card>
-            </Link>
-
-            <Link href="/checklists">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <CheckSquare className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">Compliance Checklists</h3>
-                <p className="text-muted-foreground">
-                  Requirements for your specific shipment, product and route
-                </p>
-              </Card>
-            </Link>
-
-            <Link href="/certificate-of-origin">
-              <Card className="p-4 sm:p-6 md:p-8 hover:shadow-lg transition-shadow cursor-pointer">
-                <FileText className="w-12 h-12 mb-4 text-primary" />
-                <h3 className="text-xl font-bold mb-2">Certificate of Origin</h3>
-                <p className="text-muted-foreground">
-                  Build and validate certificates for USMCA, KORUS, CAFTA-DR and more
-                </p>
-              </Card>
-            </Link>
-          </div>
+            </Card>
+          ) : (
+            <Card className="items-start gap-2 p-5 text-sm text-muted-foreground">
+              No shipments yet. Classify a product to start one, or import a purchase order.
+              <Link href="/my-shipments"><Button variant="outline" size="sm">Import a PO</Button></Link>
+            </Card>
+          )}
         </section>
-      </main>
+
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold">Reference</h2>
+          {REFERENCE.map(({ path, label, body, icon: Icon }) => (
+            <Link key={path} href={path}>
+              <Card className="flex-row items-center gap-3 p-3.5 transition-shadow hover:shadow-md">
+                <Icon className="size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{label}</p>
+                  <p className="truncate text-xs text-muted-foreground">{body}</p>
+                </div>
+              </Card>
+            </Link>
+          ))}
+          <Card className="gap-2 border-ai/20 bg-ai-soft/60 p-4">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-ai"><Sparkles className="size-4" /> {mode === "off" ? "AI enhancement is off" : `AI on · ${label}`}</p>
+            <p className="text-xs text-muted-foreground">
+              {mode === "off"
+                ? "Everything works without it. Turn it on for better HTS matches, extra duties and rules, scanned PO reading and the assistant."
+                : "Results are improved by AI where it helps; additions are labelled and codes are checked against the official schedule."}
+            </p>
+            <Button size="sm" variant="outline" className="self-start" onClick={() => setAiOpen(true)}>{mode === "off" ? "Set up AI" : "AI settings"}</Button>
+          </Card>
+        </section>
+      </div>
+      <AiSettingsDialog open={aiOpen} onOpenChange={setAiOpen} />
     </div>
   );
 }

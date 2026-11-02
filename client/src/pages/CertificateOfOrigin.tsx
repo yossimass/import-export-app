@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { trpc } from "@/lib/trpc";
+import { useAi } from "@/lib/ai";
+import { EnhanceNotice } from "@/components/app/EnhanceNotice";
 import { useAuth } from "@/_core/hooks/useAuth";
-import Navigation from "@/components/Navigation";
 import {
   FileText, Download, CheckCircle, AlertTriangle, Info,
   Loader2, Save, Printer, Shield, Sparkles, ChevronRight,
@@ -302,18 +303,30 @@ export default function CertificateOfOrigin() {
     },
   });;
 
+  const { mode: aiMode, run: runAi } = useAi();
+  const [aiState, setAiState] = useState<"off" | "working" | "done" | "failed">("off");
+  const applyGuidance = (data: any) => {
+    setAiResult(data);
+    if (data.recommendedCriterion) setForm(prev => ({ ...prev, originCriterion: data.recommendedCriterion }));
+    if (data.producerDeclaration) setForm(prev => ({ ...prev, producerDeclaration: data.producerDeclaration }));
+  };
   const aiAssistMutation = trpc.certificate.assist.useMutation({
-    onSuccess: (data) => {
-      setAiResult(data);
-      // Auto-apply recommended criterion
-      if (data.recommendedCriterion) {
-        setForm(prev => ({ ...prev, originCriterion: data.recommendedCriterion }));
+    onSuccess: async (data, vars) => {
+      applyGuidance(data);
+      if (aiMode === "off") {
+        setAiState("off");
+        return toast.success("Suggestions applied — review the fields");
       }
-      // Auto-apply producer declaration
-      if (data.producerDeclaration) {
-        setForm(prev => ({ ...prev, producerDeclaration: data.producerDeclaration }));
+      setAiState("working");
+      try {
+        const { origin } = await runAi({ feature: "origin", ...vars, base: data });
+        applyGuidance(origin);
+        setAiState("done");
+        toast.success("Suggestions applied and checked with AI — review the fields");
+      } catch {
+        setAiState("failed");
+        toast.success("Suggestions applied — review the fields");
       }
-      toast.success("Suggestions applied — review the fields");
     },
     onError: (err) => toast.error(`Suggestions failed: ${err.message}`),
   });
@@ -356,8 +369,7 @@ export default function CertificateOfOrigin() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
+      <div className="">
         <div className="container py-20 text-center">
           <Shield className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
           <h2 className="text-2xl font-bold mb-2">Workspace Unavailable</h2>
@@ -369,9 +381,8 @@ export default function CertificateOfOrigin() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navigation />
-      <main className="container py-8">
+    <div className="">
+      <main className="">
 
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
@@ -535,7 +546,7 @@ export default function CertificateOfOrigin() {
                 <CardContent className="space-y-4">
                   <Button
                     onClick={handleAiAssist}
-                    disabled={aiAssistMutation.isPending}
+                    disabled={aiAssistMutation.isPending || aiState === "working"}
                     className="w-full gap-2 bg-purple-700 hover:bg-purple-800 text-white"
                   >
                     {aiAssistMutation.isPending ? (
@@ -545,6 +556,7 @@ export default function CertificateOfOrigin() {
                     )}
                   </Button>
 
+                  <EnhanceNotice state={aiState} doneText="Eligibility checked with AI" />
                   {aiResult && (
                     <div className="space-y-3 text-sm">
                       {aiResult.eligibilityAssessment && (

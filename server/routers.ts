@@ -4,7 +4,10 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import * as db from "./db";
 import * as compliance from "./compliance";
+import * as ai from "../shared/ai/enhance";
+import { AiUnavailableError, lookupCodes, runServerAi, serverAiStatus } from "./ai";
 import { searchByKeywords } from "./htsIndex";
+import type { HtsResult, TariffResult } from "../shared/tradeTypes";
 import { storageDelete, storagePut, storageRead } from "./storage";
 import * as trade from "./tradeData";
 import type { User } from "../drizzle/schema";
@@ -135,6 +138,13 @@ export const appRouter = router({
       .mutation(async ({ ctx, input }) => {
         const file = await readOwnedFile(ctx.user, input.fileUrl);
         const isCsv = input.mimeType === "text/csv" || /\.csv$/i.test(input.fileName);
+        const base = { fileUrl: input.fileUrl, extractedAt: new Date().toISOString() };
+
+        // Images (and scanned PDFs) can only be read by an AI vision model;
+        // the client runs that step when AI is available.
+        if (input.mimeType.startsWith("image/")) {
+          return { ...base, lineItems: [], text: "", needsVision: true };
+        }
         let text: string;
         if (input.mimeType === "application/pdf") {
           const { getDocumentProxy, extractText } = await import("unpdf");
@@ -143,16 +153,18 @@ export const appRouter = router({
         } else if (isCsv || input.mimeType.startsWith("text/")) {
           text = Buffer.from(file.data).toString("utf8");
         } else {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "Upload a PDF or CSV purchase order. Scanned images can't be read automatically." });
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Upload a PDF, CSV or image of the purchase order." });
         }
         if (!text.trim()) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: "This PDF has no text layer (it looks scanned). Export it as a text PDF or CSV, or create the shipment manually." });
+          return { ...base, lineItems: [], text: "", needsVision: true, scannedPdf: true };
         }
 
         return {
           ...compliance.parsePurchaseOrder(text, isCsv),
-          fileUrl: input.fileUrl,
-          extractedAt: new Date().toISOString(),
+          ...base,
+          // Sent back so an AI (server or local) can fill gaps without re-reading the file
+          text: text.slice(0, 15000),
+          needsVision: false,
         };
       }),
 
@@ -248,7 +260,7 @@ export const appRouter = router({
         limit: z.number().optional(),
         shipmentId: z.number().optional(), // Link to workflow
       }))
-      .query(async ({ input }) => {
+      .query(async ({ input }): Promise<HtsResult[]> => {
         const limit = Math.min(input.limit || 8, 25);
         if (trade.looksLikeHtsCode(input.query)) {
           const line = await trade.lookupHts(input.query).catch(() => null);
@@ -261,6 +273,7 @@ export const appRouter = router({
             reasoning: "Exact match from the USITC Harmonized Tariff Schedule.",
             alternatives: [],
             confidence: 1,
+            source: "official",
           }];
         }
 
@@ -279,6 +292,7 @@ export const appRouter = router({
               .slice(0, 2)
               .map(alt => ({ code: alt.code, reason: alt.path.split(" > ").pop() })),
             confidence,
+            source: "rules",
           };
         });
       }),
@@ -305,6 +319,12 @@ export const appRouter = router({
       }))
       .mutation(async ({ ctx, input }) => {
         if (input.shipmentId) await getOwnedShipment(requireUser(ctx.user), input.shipmentId);
+        // Accept country names as well as ISO codes
+        input = {
+          ...input,
+          originCountry: compliance.resolveCountry(input.originCountry),
+          destinationCountry: compliance.resolveCountry(input.destinationCountry),
+        };
 
         // US imports: compute from official HTS rates, no LLM
         if (input.destinationCountry.toUpperCase() === "USA") {
@@ -350,12 +370,12 @@ export const appRouter = router({
           agreements.length ? `A preferential rate may apply under ${agreements.join(", ")} if the goods qualify.` : "",
           "Import VAT/GST and local fees are not included.",
         ].filter(Boolean).join("\n");
-        const result = {
+        const result: TariffResult = {
           mfnRate: input.dutyRate !== undefined ? `${input.dutyRate}%` : "Not available",
           preferentialRate: null,
           additionalDuties: round2(additionalDuties),
-          appliedRate: input.dutyRate !== undefined ? `${input.dutyRate}%` : "Enter rate",
-          tradeAgreement: "Entered rate",
+          appliedRate: input.dutyRate !== undefined ? `${input.dutyRate}%` : "not entered",
+          tradeAgreement: `${compliance.countryName(input.destinationCountry)} tariff`,
           exclusionStatus: "none",
           dutyAmount: round2(dutyAmount),
           mpf: 0,
@@ -365,8 +385,12 @@ export const appRouter = router({
           rateSource: "User-entered rate",
           rationale: explanation,
           explanation,
-          alternatives: [] as Array<{ scenario: string; impact: string }>,
+          alternatives: [],
           effectiveDate: new Date().toISOString(),
+          additionalDutyLines: input.additionalDutyRate
+            ? [{ name: "Additional duty (entered)", ratePercent: input.additionalDutyRate, amount: round2(additionalDuties), basis: "Entered by you", source: "user" }]
+            : [],
+          source: input.dutyRate !== undefined ? "user" : "rules",
         };
 
         if (input.shipmentId) {
@@ -512,6 +536,19 @@ export const appRouter = router({
         };
       }),
     
+    // Store the checklist after the client merged AI additions into it
+    save: protectedProcedure
+      .input(z.object({ shipmentId: z.number(), items: z.array(z.any()).max(100) }))
+      .mutation(async ({ ctx, input }) => {
+        await getOwnedShipment(ctx.user, input.shipmentId);
+        await db.updateShipment(input.shipmentId, {
+          workflowStep: 4,
+          status: "reviewing",
+          complianceChecklist: { items: input.items, generatedAt: new Date().toISOString() },
+        });
+        return { success: true };
+      }),
+
     toggleItem: protectedProcedure
       .input(z.object({
         shipmentId: z.number(),
@@ -823,6 +860,74 @@ export const appRouter = router({
   // ============================================================================
   // ADMIN PANEL
   // ============================================================================
+  // ============================================================================
+  // AI ENHANCEMENT - optional; every feature works without it
+  // ============================================================================
+  ai: router({
+    status: publicProcedure.query(() => ({ server: serverAiStatus() })),
+
+    // Validates codes suggested by an AI running in the browser (local Ollama)
+    lookupCodes: publicProcedure
+      .input(z.object({ codes: z.array(z.string().max(20)).max(20) }))
+      .query(({ input }) => lookupCodes(input.codes)),
+
+    enhance: protectedProcedure
+      .input(z.discriminatedUnion("feature", [
+        z.object({ feature: z.literal("hts"), query: z.string().max(500), candidates: z.array(z.any()).max(25) }),
+        z.object({ feature: z.literal("tariff"), input: z.any(), base: z.any() }),
+        z.object({ feature: z.literal("regulations"), country: z.string().max(100), htsCode: z.string().max(20).optional(), productDescription: z.string().max(500).optional(), base: z.array(z.any()).max(60) }),
+        z.object({ feature: z.literal("checklist"), shipmentType: z.string().max(20), originCountry: z.string().max(100), destinationCountry: z.string().max(100), htsCode: z.string().max(20).optional(), base: z.array(z.any()).max(80) }),
+        z.object({ feature: z.literal("po"), base: z.any(), text: z.string().max(20000).optional(), fileUrl: z.string().optional() }),
+        z.object({ feature: z.literal("origin"), tradeAgreement: z.string(), exporterCountry: z.string().optional(), destinationCountry: z.string().optional(), goodsDescription: z.string().max(2000).optional(), htsCode: z.string().optional(), base: z.any() }),
+        z.object({ feature: z.literal("assistant"), question: z.string().min(1).max(4000), history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(8000) })).max(12).optional(), context: z.string().max(12000).optional() }),
+      ]))
+      .mutation(async ({ ctx, input }) => {
+        const cacheable = input.feature !== "assistant" && input.feature !== "po";
+        try {
+          return await runServerAi(ctx.user.id, input, cacheable, async deps => {
+            switch (input.feature) {
+              case "hts":
+                return { hts: await ai.enhanceHts(deps, { query: input.query, candidates: input.candidates }) };
+              case "tariff":
+                return { tariff: await ai.enhanceTariff(deps, { input: input.input, base: input.base }) };
+              case "regulations":
+                return { regulations: await ai.enhanceRegulations(deps, input) };
+              case "checklist":
+                return { checklist: await ai.enhanceChecklist(deps, input) };
+              case "po": {
+                let imageDataUrl: string | undefined;
+                if (!input.text && input.fileUrl) {
+                  const file = await readOwnedFile(ctx.user, input.fileUrl);
+                  if (!file.contentType.startsWith("image/")) throw new Error("Only images can be read without a text layer");
+                  imageDataUrl = `data:${file.contentType};base64,${Buffer.from(file.data).toString("base64")}`;
+                }
+                return { po: await ai.enhancePO(deps, { base: input.base, text: input.text, imageDataUrl }) };
+              }
+              case "origin": {
+                const { getAgreementById } = await import("../shared/tradeAgreements");
+                const agreement = getAgreementById(input.tradeAgreement);
+                return {
+                  origin: await ai.enhanceOrigin(deps, {
+                    ...input,
+                    agreementName: agreement?.name ?? input.tradeAgreement,
+                    criteria: agreement?.originCriteria ?? [],
+                  }),
+                };
+              }
+              case "assistant":
+                return { answer: await ai.askAssistant(deps, input) };
+            }
+          });
+        } catch (error: any) {
+          if (error instanceof AiUnavailableError) {
+            throw new TRPCError({ code: "PRECONDITION_FAILED", message: error.message });
+          }
+          console.warn(`[AI] ${input.feature} enhancement failed:`, error?.message);
+          throw new TRPCError({ code: "BAD_GATEWAY", message: error?.message || "AI request failed" });
+        }
+      }),
+  }),
+
   admin: router({
     getStats: protectedProcedure
       .query(async ({ ctx }) => {

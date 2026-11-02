@@ -5,4 +5,11 @@ export const ENV = {
   // Workspace granted the admin role: "anon_" + the itcp_workspace cookie value
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
+  // Optional server-side AI (any OpenAI-compatible API). Without LLM_API_KEY the
+  // app runs on official data and rules only; testers can still use local Ollama.
+  llmApiUrl: process.env.LLM_API_URL ?? "https://openrouter.ai/api/v1",
+  llmApiKey: process.env.LLM_API_KEY ?? "",
+  llmModel: process.env.LLM_MODEL ?? "google/gemini-2.5-flash",
+  // Requests per workspace per day to the server-side AI
+  aiDailyLimit: Number(process.env.AI_DAILY_LIMIT ?? 100),
 };

@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import Navigation from "@/components/Navigation";
 import WorkflowStepper from "@/components/WorkflowStepper";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,14 +6,35 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { trpc } from "@/lib/trpc";
-import { Calculator, Info, TrendingUp, DollarSign, Package, FileDown, FileSpreadsheet } from "lucide-react";
+import { ArrowRight, Calculator, Info, FileDown, FileSpreadsheet, Sparkles } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/app/PageHeader";
+import { SourceBadge } from "@/components/app/SourceBadge";
+import { EnhanceNotice } from "@/components/app/EnhanceNotice";
+import { useEnhanced } from "@/lib/ai";
+import { useLocation } from "wouter";
+import type { InfoSource, TariffInput, TariffResult } from "@shared/tradeTypes";
+
+const isUS = (c: string) => ["usa", "us", "united states", "united states of america"].includes(c.trim().toLowerCase());
+
+function Row({ label, value, hint, badge, strong }: { label: string; value: string; hint?: string; badge?: InfoSource; strong?: boolean }) {
+  return (
+    <div className={`flex items-start justify-between gap-4 px-5 py-2.5 ${strong ? "bg-muted/50 font-semibold" : ""}`}>
+      <dt className="min-w-0">
+        <span className="flex flex-wrap items-center gap-2">{label}{badge && <SourceBadge source={badge} />}</span>
+        {hint && <span className="block text-xs font-normal text-muted-foreground">{hint}</span>}
+      </dt>
+      <dd className="font-mono tabular-nums">{value}</dd>
+    </div>
+  );
+}
 import { exportTariffPDF, exportTariffCSV } from "@/lib/exportUtils";
 import { toast } from "sonner";
-import { COUNTRIES } from "@/../../shared/countries";
+import { CountryInput } from "@/components/app/CountryInput";
 
 const WORKFLOW_STEPS = [
-  { id: 1, label: "HTS Code", path: "/hts-search" },
-  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
+  { id: 1, label: "Classify", path: "/hts-search" },
+  { id: 2, label: "Duties", path: "/tariff-calculator" },
   { id: 3, label: "Documents", path: "/documents" },
   { id: 4, label: "Compliance", path: "/checklists" },
 ];
@@ -31,7 +51,7 @@ export default function TariffCalculator() {
   const [formData, setFormData] = useState({
     htsCode: "",
     originCountry: "",
-    destinationCountry: "",
+    destinationCountry: "United States",
     value: "10000",
     quantity: "100",
     weight: "500",
@@ -60,7 +80,30 @@ export default function TariffCalculator() {
     }
   }, [shipment]);
 
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<TariffResult | null>(null);
+  const [lastInput, setLastInput] = useState<TariffInput | null>(null);
+  const [, setLocation] = useLocation();
+  const { data: enhanced, state, error } = useEnhanced<TariffResult>(
+    result,
+    result && lastInput ? { feature: "tariff", input: lastInput, base: result } : null,
+    r => r.tariff
+  );
+  const shown = (enhanced ?? result)!;
+  const money = (n: number) => `$${(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const exportData = () => ({
+    htsCode: lastInput!.htsCode,
+    origin: lastInput!.originCountry,
+    destination: lastInput!.destinationCountry,
+    value: lastInput!.value,
+    freight: lastInput!.freightCost ?? 0,
+    insurance: lastInput!.insuranceCost ?? 0,
+    appliedRate: shown.appliedRate,
+    dutyAmount: shown.dutyAmount,
+    additionalDuties: shown.additionalDuties,
+    totalDuties: shown.totalDuties,
+    landedCost: shown.landedCost,
+    tradeAgreement: shown.tradeAgreement,
+  });
 
   // Auto-save mutation
   const updateShipmentMutation = trpc.shipments.update.useMutation();
@@ -92,10 +135,7 @@ export default function TariffCalculator() {
   }, [formData, shipmentId]);
 
   const calculateMutation = trpc.tariff.calculate.useMutation({
-    onSuccess: (data) => {
-      setResult(data);
-      toast.success("Calculation complete!");
-    },
+    onSuccess: (data) => setResult(data),
     onError: (error) => {
       console.error('[TariffCalculator] Calculation error:', error);
       toast.error(error.message);
@@ -110,7 +150,7 @@ export default function TariffCalculator() {
     }
 
 
-    calculateMutation.mutate({
+    const payload: TariffInput = {
       htsCode: formData.htsCode,
       originCountry: formData.originCountry,
       destinationCountry: formData.destinationCountry,
@@ -122,26 +162,26 @@ export default function TariffCalculator() {
       insuranceCost: formData.insuranceCost ? parseFloat(formData.insuranceCost) : undefined,
       additionalDutyRate: formData.additionalDutyRate ? parseFloat(formData.additionalDutyRate) : undefined,
       dutyRate: formData.dutyRate ? parseFloat(formData.dutyRate) : undefined,
-    });
+    };
+    setLastInput(payload);
+    calculateMutation.mutate({ ...payload, shipmentId });
   };
 
 
   return (
-    <div className="min-h-screen">
-      <Navigation />
+    <div className="">
       <WorkflowStepper currentStep={2} steps={WORKFLOW_STEPS} />
-      <div className="container mx-auto py-12">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">Tariff Calculator</h1>
-        <p className="text-gray-600">
-          Calculate duties with MFN rates, trade agreements, and landed cost breakdown
-        </p>
-      </div>
+      <div className="">
+      <PageHeader
+        eyebrow="Step 2"
+        title="Duties & landed cost"
+        description="US duty rates, trade-agreement preferences and CBP fees come from official data. With AI on, likely additional duties (e.g. Section 301) are added and labelled."
+      />
 
-      <div className="grid lg:grid-cols-2 gap-8">
+      <div className="grid gap-6 lg:grid-cols-2">
         <div>
-          <Card className="p-6">
-            <h2 className="text-xl font-bold mb-6">Shipment Details</h2>
+          <Card className="p-5">
+            <h2 className="text-base font-semibold">Shipment details</h2>
             
             <div className="space-y-4">
               <div>
@@ -153,42 +193,14 @@ export default function TariffCalculator() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Origin Country *</Label>
-                  <Select
-                    value={formData.originCountry}
-                    onValueChange={(value) => setFormData({ ...formData, originCountry: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select origin" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {COUNTRIES.map((country) => (
-                        <SelectItem key={country.code} value={country.code}>
-                          {country.name} ({country.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="tc-origin">Origin country *</Label>
+                  <CountryInput id="tc-origin" placeholder="e.g. China" value={formData.originCountry} onChange={v => setFormData({ ...formData, originCountry: v })} />
                 </div>
-                <div>
-                  <Label>Destination Country *</Label>
-                  <Select
-                    value={formData.destinationCountry}
-                    onValueChange={(value) => setFormData({ ...formData, destinationCountry: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select destination" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {COUNTRIES.map((country) => (
-                        <SelectItem key={country.code} value={country.code}>
-                          {country.name} ({country.code})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-1.5">
+                  <Label htmlFor="tc-dest">Destination country *</Label>
+                  <CountryInput id="tc-dest" placeholder="e.g. United States" value={formData.destinationCountry} onChange={v => setFormData({ ...formData, destinationCountry: v })} />
                 </div>
               </div>
 
@@ -258,7 +270,7 @@ export default function TariffCalculator() {
                     onChange={(e) => setFormData({ ...formData, insuranceCost: e.target.value })}
                   />
                 </div>
-                {formData.destinationCountry && formData.destinationCountry !== "USA" && (
+                {formData.destinationCountry && !isUS(formData.destinationCountry) && (
                   <div className="col-span-2">
                     <Label>Import Duty Rate % (destination tariff)</Label>
                     <Input
@@ -297,191 +309,101 @@ export default function TariffCalculator() {
         </div>
 
         <div>
-          {calculateMutation.isPending && (
-            <Card className="p-6">
-              <div className="flex items-center justify-center py-12">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Calculating tariffs...</p>
-                </div>
-              </div>
-            </Card>
-          )}
+          {calculateMutation.isPending && <Skeleton className="h-80 w-full rounded-xl" />}
 
           {result && !calculateMutation.isPending && (
             <div className="space-y-4">
-              <Card className="p-6 bg-red-50 border-red-200">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-lg">Total Landed Cost</h3>
-                  <DollarSign className="h-5 w-5 text-red-600" />
+              <Card className="gap-1 border-primary/20 bg-primary/5 p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-medium text-muted-foreground">Total landed cost</p>
+                  <SourceBadge source={shown.source} />
                 </div>
-                <p className="text-3xl font-bold text-red-600">
-                  ${result.landedCost?.toLocaleString() || 'N/A'}
-                </p>
+                <p className="text-3xl font-semibold tracking-tight">{money(shown.landedCost)}</p>
+                <p className="text-xs text-muted-foreground">{shown.tradeAgreement} · applied rate {shown.appliedRate}</p>
+                {shown !== result && shown.landedCost !== result.landedCost && (
+                  <p className="text-xs text-muted-foreground">Without AI estimates: <span className="font-mono">{money(result.landedCost)}</span></p>
+                )}
+                <EnhanceNotice state={state} error={error} className="mt-2" doneText="Additional duties checked with AI" />
               </Card>
 
-              <Card className="p-6">
-                <h3 className="font-bold text-lg mb-4 flex items-center">
-                  <TrendingUp className="mr-2 h-5 w-5 text-red-600" />
-                  Duty Breakdown
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-600">Duty Rate</span>
-                    <span className="font-semibold">{result.appliedRate || result.mfnRate || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-600">Duty Amount</span>
-                    <span className="font-semibold">${result.dutyAmount?.toLocaleString() || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-600">Additional Duties</span>
-                    <span className="font-semibold">${result.additionalDuties?.toLocaleString() || '0'}</span>
-                  </div>
-                  {result.tradeAgreement && (
-                    <div className="flex justify-between py-2 border-b">
-                      <span className="text-gray-600">Trade Agreement</span>
-                      <span className="font-semibold text-green-600">{result.tradeAgreement}</span>
-                    </div>
-                  )}
-                </div>
+              <Card className="gap-0 p-0">
+                <div className="border-b px-5 py-3 text-sm font-semibold">Breakdown</div>
+                <dl className="divide-y text-sm">
+                  <Row label="Merchandise value" value={money(lastInput?.value ?? 0)} />
+                  {!!lastInput?.freightCost && <Row label="Freight" value={money(lastInput.freightCost)} />}
+                  {!!lastInput?.insuranceCost && <Row label="Insurance" value={money(lastInput.insuranceCost)} />}
+                  <Row label={`Customs duty (${shown.appliedRate})`} value={money(shown.dutyAmount)} badge={shown.source === "ai" ? "ai" : result.source} />
+                  {(shown.additionalDutyLines ?? []).map((d, i) => (
+                    <Row key={i} label={`${d.name} (${d.ratePercent}%)`} hint={d.basis} value={money(d.amount)} badge={d.source} />
+                  ))}
+                  {shown.mpf > 0 && <Row label="Merchandise processing fee" value={money(shown.mpf)} badge="official" />}
+                  {shown.hmf > 0 && <Row label="Harbor maintenance fee" value={money(shown.hmf)} badge="official" />}
+                  <Row label="Total duties & fees" value={money(shown.totalDuties)} strong />
+                </dl>
               </Card>
 
-              <Card className="p-6">
-                <h3 className="font-bold text-lg mb-4 flex items-center">
-                  <Package className="mr-2 h-5 w-5 text-red-600" />
-                  Cost Summary
-                </h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-600">Merchandise Value</span>
-                    <span className="font-semibold">${parseFloat(formData.value).toLocaleString()}</span>
-                  </div>
-                  {formData.freightCost && parseFloat(formData.freightCost) > 0 && (
-                    <div className="flex justify-between py-2 border-b">
-                      <span className="text-gray-600">Freight</span>
-                      <span className="font-semibold">${parseFloat(formData.freightCost).toLocaleString()}</span>
-                    </div>
-                  )}
-                  {formData.insuranceCost && parseFloat(formData.insuranceCost) > 0 && (
-                    <div className="flex justify-between py-2 border-b">
-                      <span className="text-gray-600">Insurance</span>
-                      <span className="font-semibold">${parseFloat(formData.insuranceCost).toLocaleString()}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between py-2 border-b">
-                    <span className="text-gray-600">Total Duties</span>
-                    <span className="font-semibold text-red-600">
-                      ${((result.dutyAmount || 0) + (result.additionalDuties || 0)).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              </Card>
-
-              {result.explanation && (
-                <Card className="p-6 bg-blue-50 border-blue-200">
-                  <div className="flex items-start">
-                    <Info className="h-5 w-5 text-blue-600 mr-3 mt-0.5 flex-shrink-0" />
-                    <div>
-                      <h3 className="font-bold mb-2">Explanation</h3>
-                      <p className="text-sm text-gray-700 whitespace-pre-line">{result.explanation}</p>
-                    </div>
-                  </div>
+              {(shown.aiNotes?.length ?? 0) > 0 && (
+                <Card className="gap-2 border-ai/20 bg-ai-soft/60 p-4 text-sm">
+                  <p className="flex items-center gap-1.5 font-medium text-ai"><Sparkles className="size-4" /> AI notes</p>
+                  <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                    {shown.aiNotes!.map((n, i) => <li key={i}>{n}</li>)}
+                  </ul>
                 </Card>
               )}
 
-              {/* Export Buttons */}
-              <div className="flex gap-3 mb-4">
+              {shown.explanation && (
+                <details className="rounded-xl border bg-card p-4 text-sm">
+                  <summary className="flex cursor-pointer items-center gap-2 font-medium"><Info className="size-4 text-official" /> How this was calculated</summary>
+                  <p className="mt-2 whitespace-pre-line text-muted-foreground">{shown.explanation}</p>
+                </details>
+              )}
+
+              <div className="flex gap-2">
                 <Button
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    if (!result) return;
-                    exportTariffPDF({
-                      htsCode: formData.htsCode,
-                      origin: formData.originCountry,
-                      destination: formData.destinationCountry,
-                      value: parseFloat(formData.value),
-                      freight: parseFloat(formData.freightCost),
-                      insurance: parseFloat(formData.insuranceCost),
-                      appliedRate: result.appliedRate || 'N/A',
-                      dutyAmount: result.dutyAmount || 0,
-                      additionalDuties: result.additionalDuties || 0,
-                      totalDuties: (result.dutyAmount || 0) + (result.additionalDuties || 0),
-                      landedCost: result.landedCost || 0,
-                      tradeAgreement: result.tradeAgreement,
-                      calculationDate: new Date().toISOString(),
-                    });
-                    toast.success('PDF exported successfully');
+                    exportTariffPDF({ ...exportData(), calculationDate: new Date().toISOString() });
+                    toast.success("PDF exported");
                   }}
                 >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Export PDF
+                  <FileDown className="size-4" /> PDF
                 </Button>
                 <Button
                   variant="outline"
                   className="flex-1"
                   onClick={() => {
-                    if (!result) return;
-                    exportTariffCSV({
-                      htsCode: formData.htsCode,
-                      origin: formData.originCountry,
-                      destination: formData.destinationCountry,
-                      value: parseFloat(formData.value),
-                      freight: parseFloat(formData.freightCost),
-                      insurance: parseFloat(formData.insuranceCost),
-                      appliedRate: result.appliedRate || 'N/A',
-                      dutyAmount: result.dutyAmount || 0,
-                      additionalDuties: result.additionalDuties || 0,
-                      totalDuties: (result.dutyAmount || 0) + (result.additionalDuties || 0),
-                      landedCost: result.landedCost || 0,
-                      tradeAgreement: result.tradeAgreement,
-                    });
-                    toast.success('CSV exported successfully');
+                    exportTariffCSV(exportData());
+                    toast.success("CSV exported");
                   }}
                 >
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
-                  Export CSV
+                  <FileSpreadsheet className="size-4" /> CSV
                 </Button>
               </div>
 
-              {/* Save & Continue Button */}
               <Button
                 size="lg"
                 className="w-full"
                 onClick={() => {
                   if (shipmentId) {
                     updateShipmentMutation.mutate(
-                      {
-                        shipmentId,
-                        data: {
-                          workflowStep: 3,
-                          status: "documenting",
-                          lastCalculation: result,
-                        },
-                      },
-                      {
-                        onSuccess: () => {
-                          window.location.href = `/documents?shipmentId=${shipmentId}`;
-                        },
-                      }
+                      { shipmentId, data: { workflowStep: 3, status: "documenting", lastCalculation: shown } },
+                      { onSuccess: () => setLocation(`/documents?shipmentId=${shipmentId}`) }
                     );
                   } else {
-                    window.location.href = "/documents";
+                    setLocation("/documents");
                   }
                 }}
               >
-                Save & Continue to Documents →
+                Save & continue to documents <ArrowRight className="size-4" />
               </Button>
             </div>
           )}
 
           {!result && !calculateMutation.isPending && (
-            <Card className="p-6">
-              <div className="text-center py-12 text-gray-400">
-                <Calculator className="h-12 w-12 mx-auto mb-4" />
-                <p>Enter shipment details and click Calculate to see results</p>
-              </div>
+            <Card className="items-center justify-center gap-2 p-12 text-center text-sm text-muted-foreground">
+              <Calculator className="size-10 opacity-40" />
+              Enter shipment details and calculate to see duties and landed cost.
             </Card>
           )}
         </div>
