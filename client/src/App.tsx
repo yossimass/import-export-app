@@ -6,6 +6,8 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import { AppShell } from "./components/app/AppShell";
+import { AiProvider } from "./lib/ai";
 
 // Route-level code splitting: each page loads only when visited
 const HtsSearch = lazy(() => import("./pages/HtsSearch"));
@@ -20,6 +22,7 @@ const Credits = lazy(() => import("./pages/Credits"));
 const CertificateOfOrigin = lazy(() => import("./pages/CertificateOfOrigin"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Assistant = lazy(() => import("./pages/Assistant"));
 
 function Router() {
   return (
@@ -38,6 +41,7 @@ function Router() {
       <Route path={"/certificate-of-origin"} component={CertificateOfOrigin} />
       <Route path={"/admin"} component={AdminPanel} />
       <Route path={"/profile"} component={Profile} />
+      <Route path={"/assistant"} component={Assistant} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
@@ -51,7 +55,11 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <AiProvider>
+            <AppShell>
+              <Router />
+            </AppShell>
+          </AiProvider>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>

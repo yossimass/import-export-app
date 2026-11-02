@@ -1,4 +1,3 @@
-import Navigation from "@/components/Navigation";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,8 +6,9 @@ import { trpc } from "@/lib/trpc";
 import {
   Package, ArrowRight, Trash2, Calendar, Upload, FileText,
   Stamp, CheckCircle2, Clock, AlertCircle, X, ChevronDown, ChevronUp,
-  Loader2, Eye
+  Loader2, Eye, Sparkles
 } from "lucide-react";
+import { useAi, fileToDataUrl } from "@/lib/ai";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useState, useRef, useCallback } from "react";
@@ -43,6 +43,7 @@ interface POData {
   fileUrl?: string;
   extractedAt?: string;
   lineItems?: LineItem[];
+  aiFields?: string[];
 }
 
 // ─── COO Status Badge ─────────────────────────────────────────────────────────
@@ -80,7 +81,7 @@ function POPreviewPanel({ poData, onConfirm, onEdit, isCreating }: {
       <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2">
         <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
         <p className="text-sm text-green-800 font-medium">
-          Data was read from your PO. Check every field before confirming — automatic reading can miss or misplace values.
+          Data was read from your PO{poData.aiFields?.length ? " (fields marked ✦ were filled by AI)" : ""}. Check every field before confirming — automatic reading can miss or misplace values.
         </p>
       </div>
 
@@ -102,7 +103,7 @@ function POPreviewPanel({ poData, onConfirm, onEdit, isCreating }: {
           if (!val) return null;
           return (
             <div key={key} className="bg-gray-50 rounded p-2">
-              <p className="text-xs text-muted-foreground">{label}</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">{label}{poData.aiFields?.includes(key) && <Sparkles className="w-3 h-3 text-ai" aria-label="Filled by AI" />}</p>
               <p className="font-medium truncate">{val}</p>
             </div>
           );
@@ -167,7 +168,9 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
   onClose: () => void;
   onShipmentCreated: (shipmentId: number, name: string) => void;
 }) {
-  const [step, setStep] = useState<"upload" | "extracting" | "preview" | "error">("upload");
+  const [step, setStep] = useState<"upload" | "extracting" | "enhancing" | "preview" | "error">("upload");
+  const { mode: aiMode, run: runAi, label: aiLabel } = useAi();
+  const aiOn = aiMode !== "off";
   const [dragOver, setDragOver] = useState(false);
   const [extractedPO, setExtractedPO] = useState<POData | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -186,8 +189,11 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
     }
 
     const isCsv = file.type === "text/csv" || file.name.toLowerCase().endsWith(".csv");
-    if (file.type !== "application/pdf" && !isCsv) {
-      setErrorMsg("Unsupported file type. Please upload a PDF (with selectable text) or a CSV.");
+    const isImage = file.type.startsWith("image/");
+    if (file.type !== "application/pdf" && !isCsv && !(isImage && aiOn)) {
+      setErrorMsg(isImage
+        ? "Reading images needs AI. Turn on AI enhancement, or upload a PDF with selectable text or a CSV."
+        : "Unsupported file type. Upload a PDF, a CSV, or (with AI on) an image.");
       setStep("error");
       return;
     }
@@ -195,39 +201,47 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
     setStep("extracting");
 
     try {
-      // Read file as base64 and upload to S3 via documents.upload
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result as string;
-          resolve(result.split(',')[1]); // strip data:...;base64, prefix
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
+      const dataUrl = await fileToDataUrl(file);
+      const mimeType = isCsv ? "text/csv" : file.type;
       const uploadResult = await uploadDocMutation.mutateAsync({
         fileName: file.name,
-        fileData: base64,
-        mimeType: isCsv ? "text/csv" : file.type,
-        documentType: 'purchase_order',
+        fileData: dataUrl.split(",")[1],
+        mimeType,
+        documentType: "purchase_order",
       });
       const fileUrl = uploadResult.url;
 
-      // Read PO fields from the document text
-      const result = await importPOMutation.mutateAsync({
-        fileUrl,
-        fileName: file.name,
-        mimeType: isCsv ? "text/csv" : file.type,
-      });
+      // 1) Rules read the text layer / CSV
+      const { text, needsVision, scannedPdf, ...base } = await importPOMutation.mutateAsync({ fileUrl, fileName: file.name, mimeType }) as any;
 
-      setExtractedPO(result as POData);
+      if (needsVision && (!aiOn || scannedPdf)) {
+        setErrorMsg(scannedPdf
+          ? "This PDF has no text layer (it looks scanned). Upload a photo or image of it" + (aiOn ? "" : " with AI turned on") + ", or a CSV."
+          : "Reading images needs AI. Turn on AI enhancement, or upload a PDF with selectable text.");
+        setStep("error");
+        return;
+      }
+
+      // 2) AI fills gaps (or reads the image); the rule result stands if it fails
+      let po = base as POData;
+      if (aiOn) {
+        setStep("enhancing");
+        try {
+          const enhanced = await runAi({ feature: "po", base, text: text || undefined, fileUrl, imageDataUrl: isImage ? dataUrl : undefined });
+          po = enhanced.po;
+        } catch (e: any) {
+          if (needsVision) throw new Error(`AI couldn't read the image: ${e?.message ?? "request failed"}`);
+          toast.message("AI unavailable — showing fields read by rules only");
+        }
+      }
+
+      setExtractedPO(po);
       setStep("preview");
     } catch (err: any) {
       setErrorMsg(err?.message || "Failed to extract PO data. Please try again.");
       setStep("error");
     }
-  }, [importPOMutation]);
+  }, [importPOMutation, aiOn, runAi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -264,7 +278,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             Import Purchase Order
           </DialogTitle>
           <DialogDescription>
-            Upload a PO as a PDF with selectable text, or a CSV with columns like Description, Qty, Unit Price, Total, HTS. Fields are read automatically to pre-fill a new shipment.
+            Upload a PO as a PDF with selectable text or a CSV (columns like Description, Qty, Unit Price, Total, HTS). With AI on, photos and scans work too and missing fields are filled in.
           </DialogDescription>
         </DialogHeader>
 
@@ -281,7 +295,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             <Upload className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
             <p className="text-lg font-semibold mb-1">Drop your PO here</p>
             <p className="text-sm text-muted-foreground mb-4">
-              Supports PDF, PNG, JPG, WEBP, TIFF — up to 4MB
+              PDF or CSV{aiOn ? ", or an image (PNG, JPG, WEBP)" : ""} — up to 4MB
             </p>
             <Button variant="outline" onClick={e => { e.stopPropagation(); fileInputRef.current?.click(); }}>
               Browse Files
@@ -289,7 +303,7 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.csv"
+              accept={aiOn ? ".pdf,.csv,.png,.jpg,.jpeg,.webp" : ".pdf,.csv"}
               className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
             />
@@ -299,10 +313,16 @@ function POImportModal({ open, onClose, onShipmentCreated }: {
         {step === "extracting" && (
           <div className="py-16 text-center">
             <Loader2 className="w-12 h-12 mx-auto mb-4 animate-spin text-primary" />
-            <p className="text-lg font-semibold mb-2">Extracting PO Data…</p>
-            <p className="text-sm text-muted-foreground">
-              AI is reading your document and extracting all fields. This takes 5–15 seconds.
-            </p>
+            <p className="text-lg font-semibold mb-2">Reading your PO…</p>
+            <p className="text-sm text-muted-foreground">Extracting fields from the document text.</p>
+          </div>
+        )}
+
+        {step === "enhancing" && (
+          <div className="py-16 text-center">
+            <Sparkles className="w-12 h-12 mx-auto mb-4 animate-pulse text-ai" />
+            <p className="text-lg font-semibold mb-2">Improving with AI…</p>
+            <p className="text-sm text-muted-foreground">{aiLabel} is filling in fields the rules missed. Local models can take a minute.</p>
           </div>
         )}
 
@@ -400,14 +420,13 @@ export default function MyShipments() {
   };
 
   return (
-    <div className="min-h-screen">
-      <Navigation />
-      <div className="container py-12">
+    <div className="">
+      <div className="">
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <div className="w-2 h-12 bg-primary mb-4"></div>
-            <h1 className="text-4xl font-bold mb-2">My Shipments</h1>
+            
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-1">My Shipments</h1>
             <p className="text-muted-foreground">
               View and manage all your saved trade compliance workflows
             </p>

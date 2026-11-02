@@ -55,10 +55,10 @@ export default function Credits() {
   const isLowBalance = balance < 0.1 && balance > 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <main className="container py-8">
+    <div className="">
+      <main className="">
         <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Credits Dashboard</h1>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-1">Credits Dashboard</h1>
           <p className="text-muted-foreground">
             Track your credit balance, usage history, and free tier status
           </p>

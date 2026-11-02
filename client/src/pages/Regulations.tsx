@@ -1,175 +1,150 @@
-import Navigation from "@/components/Navigation";
 import { useState } from "react";
+import { PageHeader } from "@/components/app/PageHeader";
+import { SourceBadge } from "@/components/app/SourceBadge";
+import { EnhanceNotice } from "@/components/app/EnhanceNotice";
+import { CountryInput } from "@/components/app/CountryInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
-import { Search, Globe, AlertTriangle, FileText, Shield, FileDown } from "lucide-react";
+import { useEnhanced } from "@/lib/ai";
 import { exportRegulationsPDF } from "@/lib/exportUtils";
+import { FileDown, Search } from "lucide-react";
 import { toast } from "sonner";
+import type { Regulation } from "@shared/tradeTypes";
+
+const TYPES = [
+  { value: "all", label: "All" },
+  { value: "import", label: "Import" },
+  { value: "export", label: "Export" },
+  { value: "licensing", label: "Licensing" },
+  { value: "restrictions", label: "Restrictions" },
+] as const;
+
+const RISK_TONE: Record<string, string> = {
+  critical: "bg-red-600 text-white",
+  high: "bg-red-50 text-red-700",
+  medium: "bg-amber-50 text-amber-700",
+  low: "bg-green-50 text-green-700",
+};
 
 export default function Regulations() {
-  const [country, setCountry] = useState("");
-  const [htsCode, setHtsCode] = useState("");
-  
-  const { data: regulations, isLoading, refetch } = trpc.regulations.search.useQuery(
-    { countryCode: country, regulationType: "all" as const, htsCode: htsCode || undefined },
-    { enabled: false }
+  const [form, setForm] = useState({ country: "", htsCode: "", product: "" });
+  const [type, setType] = useState<(typeof TYPES)[number]["value"]>("all");
+  const [submitted, setSubmitted] = useState<typeof form | null>(null);
+
+  const { data: base, isFetching } = trpc.regulations.search.useQuery(
+    { countryCode: submitted?.country ?? "", regulationType: "all", htsCode: submitted?.htsCode || undefined },
+    { enabled: !!submitted }
+  );
+  const { data: all, state, error } = useEnhanced<Regulation[]>(
+    base,
+    submitted && base ? { feature: "regulations", country: submitted.country, htsCode: submitted.htsCode || undefined, productDescription: submitted.product || undefined, base } : null,
+    r => r.regulations
   );
 
-  const handleSearch = () => {
-    if (!country.trim()) {
-      toast.error("Please enter a country");
-      return;
-    }
-    refetch();
-  };
+  const wanted = type === "restrictions" ? "restriction" : type;
+  const regulations = all?.filter(r => type === "all" || r.category === wanted);
 
-  const getRiskColor = (risk: string) => {
-    switch (risk) {
-      case "critical": return "bg-red-600 text-white";
-      case "high": return "bg-red-100 text-red-800";
-      case "medium": return "bg-yellow-100 text-yellow-800";
-      case "low": return "bg-green-100 text-green-800";
-      default: return "bg-gray-100 text-gray-800";
-    }
+  const search = () => {
+    if (!form.country.trim()) return toast.error("Enter a country");
+    setSubmitted({ ...form });
   };
 
   return (
-    <div className="min-h-screen">
-      <Navigation />
-      <div className="container py-12">
-        <div className="mb-8">
-          <div className="w-2 h-12 bg-primary mb-4"></div>
-          <h1 className="text-4xl font-bold mb-2">Trade Regulations</h1>
-          <p className="text-muted-foreground">
-            Key import/export requirements by country, plus product-specific rules for your HTS code
-          </p>
-        </div>
+    <div>
+      <PageHeader
+        title="Regulations"
+        description="Key import and export requirements by country, plus product rules for your HTS chapter. With AI on, product-specific requirements are added and labelled."
+      />
 
-        <Card className="p-6 mb-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="md:col-span-2">
-              <label className="text-sm font-medium mb-2 block">Country</label>
-              <Input
-                placeholder="e.g., United States, China, Germany"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">HTS Code (Optional)</label>
-              <Input
-                placeholder="e.g., 8471.30"
-                value={htsCode}
-                onChange={(e) => setHtsCode(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              />
-            </div>
+      <Card className="mb-6 gap-4 p-5">
+        <form className="grid gap-4 sm:grid-cols-[1fr_10rem_1fr_auto] sm:items-end" onSubmit={e => { e.preventDefault(); search(); }}>
+          <div className="space-y-1.5">
+            <Label htmlFor="rg-country">Country</Label>
+            <CountryInput id="rg-country" placeholder="e.g. Germany" value={form.country} onChange={v => setForm({ ...form, country: v })} />
           </div>
-          <Button onClick={handleSearch} disabled={isLoading} className="mt-4">
-            <Search className="w-4 h-4 mr-2" />
-            {isLoading ? "Searching..." : "Search Regulations"}
-          </Button>
-        </Card>
+          <div className="space-y-1.5">
+            <Label htmlFor="rg-hts">HTS code</Label>
+            <Input id="rg-hts" placeholder="e.g. 8517.13" value={form.htsCode} onChange={e => setForm({ ...form, htsCode: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="rg-product">Product (optional)</Label>
+            <Input id="rg-product" placeholder="e.g. Bluetooth headphones" value={form.product} onChange={e => setForm({ ...form, product: e.target.value })} />
+          </div>
+          <Button type="submit" disabled={isFetching}><Search className="size-4" /> Look up</Button>
+        </form>
+      </Card>
 
-        {regulations && regulations.length > 0 && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <Globe className="w-8 h-8 text-primary" />
-                <div>
-                  <h2 className="text-2xl font-bold">{country}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Found {regulations.length} regulations • Current as of {new Date().toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
+      {isFetching && <div className="space-y-3">{[0, 1, 2].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}</div>}
+
+      {!isFetching && regulations && submitted && (
+        <>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1 rounded-lg border bg-card p-1">
+              {TYPES.map(t => (
+                <button key={t.value} onClick={() => setType(t.value)} className={`rounded-md px-3 py-1 text-sm ${type === t.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}>{t.label}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3">
+              <EnhanceNotice state={state} error={error} doneText="Product-specific rules added" />
               <Button
                 variant="outline"
+                size="sm"
                 onClick={() => {
-                  if (!regulations) return;
-                  exportRegulationsPDF({
-                    country,
-                    regulations: regulations.map(r => ({ ...r, documents: r.documentation })),
-                  });
-                  toast.success('Regulations exported as PDF');
+                  exportRegulationsPDF({ country: submitted.country, regulations: regulations.map(r => ({ ...r, documents: r.documentation })) });
+                  toast.success("Exported");
                 }}
               >
-                <FileDown className="h-4 w-4 mr-2" />
-                Export PDF
+                <FileDown className="size-4" /> PDF
               </Button>
             </div>
+          </div>
 
-            {regulations.map((reg: any, i: number) => (
-              <Card key={i} className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start gap-3 flex-1">
-                    {reg.category === "import" && <FileText className="w-6 h-6 text-primary flex-shrink-0 mt-1" />}
-                    {reg.category === "export" && <Shield className="w-6 h-6 text-primary flex-shrink-0 mt-1" />}
-                    {reg.category === "restriction" && <AlertTriangle className="w-6 h-6 text-red-600 flex-shrink-0 mt-1" />}
-                    <div className="flex-1">
-                      <h3 className="font-bold text-lg mb-2">{reg.title}</h3>
-                      <p className="text-sm text-muted-foreground mb-3">{reg.description}</p>
+          {regulations.length === 0 && <Card className="p-10 text-center text-sm text-muted-foreground">Nothing in this category.</Card>}
+
+          <div className="grid gap-3 lg:grid-cols-2">
+            {regulations.map((reg, i) => (
+              <Card key={`${reg.title}-${i}`} className="gap-3 p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{reg.category}</span>
+                      <SourceBadge source={reg.origin} />
                     </div>
+                    <h3 className="font-semibold leading-snug">{reg.title}</h3>
                   </div>
-                  <Badge className={getRiskColor(reg.riskLevel)}>
-                    {reg.riskLevel}
-                  </Badge>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize ${RISK_TONE[reg.riskLevel] ?? RISK_TONE.medium}`}>{reg.riskLevel}</span>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                  {reg.requirements && reg.requirements.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2">Requirements:</h4>
-                      <ul className="text-sm space-y-1 pl-4">
-                        {reg.requirements.map((req: string, j: number) => (
-                          <li key={j} className="list-disc">{req}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {reg.documentation && reg.documentation.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-semibold mb-2">Required Documents:</h4>
-                      <ul className="text-sm space-y-1 pl-4">
-                        {reg.documentation.map((doc: string, j: number) => (
-                          <li key={j} className="list-disc">{doc}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-3">
-                  {reg.authority && (
-                    <span><strong>Authority:</strong> {reg.authority}</span>
-                  )}
-                  {reg.source && (
-                    <span><strong>Source:</strong> {reg.source}</span>
-                  )}
-                  {reg.effectiveDate && (
-                    <span><strong>Effective:</strong> {reg.effectiveDate}</span>
-                  )}
-                  {reg.penalties && (
-                    <span className="text-red-600"><strong>Penalties:</strong> {reg.penalties}</span>
-                  )}
+                <p className="text-sm text-muted-foreground">{reg.description}</p>
+                {(reg.requirements.length > 0 || reg.documentation.length > 0) && (
+                  <div className="grid gap-3 text-sm sm:grid-cols-2">
+                    {reg.requirements.length > 0 && (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold">What to do</p>
+                        <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">{reg.requirements.map((r, j) => <li key={j}>{r}</li>)}</ul>
+                      </div>
+                    )}
+                    {reg.documentation.length > 0 && (
+                      <div>
+                        <p className="mb-1 text-xs font-semibold">Documents</p>
+                        <ul className="list-disc space-y-0.5 pl-4 text-muted-foreground">{reg.documentation.map((d, j) => <li key={j}>{d}</li>)}</ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1 border-t pt-3 text-xs text-muted-foreground">
+                  {reg.authority && <span>{reg.authority}</span>}
+                  {reg.source && <span className="font-mono">{reg.source}</span>}
+                  {reg.penalties && <span className="text-red-700">Penalties: {reg.penalties}</span>}
                 </div>
               </Card>
             ))}
           </div>
-        )}
-
-        {regulations && regulations.length === 0 && (
-          <Card className="p-12 text-center">
-            <Globe className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-            <p className="text-muted-foreground">No regulations found for this search</p>
-          </Card>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@plugin "@tailwindcss/typography";
+@source "../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -32,6 +34,11 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-official: var(--official);
+  --color-official-soft: var(--official-soft);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -43,50 +50,55 @@
 }
 
 :root {
-  /* International Typographic Style - Pure white canvas with bold red accents */
-  --radius: 0rem; /* Sharp geometric corners */
-  --background: oklch(100% 0 0); /* Pure white */
-  --foreground: oklch(0% 0 0); /* Pure black */
+  /* Calm neutral canvas, brand red for primary actions, violet for AI */
+  --radius: 0.625rem;
+  --background: oklch(98.4% 0.002 250);
+  --foreground: oklch(21% 0.02 260);
   --card: oklch(100% 0 0);
-  --card-foreground: oklch(0% 0 0);
+  --card-foreground: oklch(21% 0.02 260);
   --popover: oklch(100% 0 0);
-  --popover-foreground: oklch(0% 0 0);
-  --primary: oklch(55% 0.22 25); /* Vibrant red */
-  --primary-foreground: oklch(100% 0 0);
-  --secondary: oklch(96% 0 0); /* Light gray */
-  --secondary-foreground: oklch(0% 0 0);
-  --muted: oklch(96% 0 0);
-  --muted-foreground: oklch(45% 0 0);
-  --accent: oklch(96% 0 0);
-  --accent-foreground: oklch(0% 0 0);
-  --destructive: oklch(55% 0.22 25);
-  --destructive-foreground: oklch(100% 0 0);
-  --border: oklch(0% 0 0); /* Black divider lines */
-  --input: oklch(90% 0 0);
-  --ring: oklch(55% 0.22 25);
+  --popover-foreground: oklch(21% 0.02 260);
+  --primary: oklch(53% 0.2 25);
+  --primary-foreground: oklch(99% 0 0);
+  --secondary: oklch(96% 0.004 250);
+  --secondary-foreground: oklch(25% 0.02 260);
+  --muted: oklch(96% 0.004 250);
+  --muted-foreground: oklch(50% 0.02 260);
+  --accent: oklch(95.5% 0.006 250);
+  --accent-foreground: oklch(21% 0.02 260);
+  --destructive: oklch(55% 0.22 27);
+  --destructive-foreground: oklch(99% 0 0);
+  --border: oklch(91% 0.006 250);
+  --input: oklch(88% 0.008 250);
+  --ring: oklch(53% 0.2 25);
+  --ai: oklch(52% 0.2 290);
+  --ai-soft: oklch(96% 0.03 290);
+  --official: oklch(48% 0.12 250);
+  --official-soft: oklch(96% 0.025 250);
   --sidebar: oklch(100% 0 0);
-  --sidebar-foreground: oklch(0% 0 0);
-  --sidebar-primary: oklch(55% 0.22 25);
-  --sidebar-primary-foreground: oklch(100% 0 0);
-  --sidebar-accent: oklch(96% 0 0);
-  --sidebar-accent-foreground: oklch(0% 0 0);
-  --sidebar-border: oklch(0% 0 0);
-  --sidebar-ring: oklch(55% 0.22 25);
-  --chart-1: oklch(55% 0.22 25);
-  --chart-2: oklch(0% 0 0);
-  --chart-3: oklch(70% 0 0);
-  --chart-4: oklch(85% 0 0);
-  --chart-5: oklch(96% 0 0);
+  --sidebar-foreground: oklch(30% 0.02 260);
+  --sidebar-primary: oklch(53% 0.2 25);
+  --sidebar-primary-foreground: oklch(99% 0 0);
+  --sidebar-accent: oklch(96% 0.006 250);
+  --sidebar-accent-foreground: oklch(21% 0.02 260);
+  --sidebar-border: oklch(91% 0.006 250);
+  --sidebar-ring: oklch(53% 0.2 25);
+  --chart-1: oklch(53% 0.2 25);
+  --chart-2: oklch(48% 0.12 250);
+  --chart-3: oklch(52% 0.2 290);
+  --chart-4: oklch(70% 0.02 260);
+  --chart-5: oklch(85% 0.01 260);
 }
 
-/* International Typographic Style uses light theme only */
+/* Light theme only */
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
   }
   button:not(:disabled),
   [role="button"]:not([aria-disabled="true"]),
@@ -142,69 +154,4 @@
       max-width: 1280px; /* Standard content width */
     }
   }
-}
-/* International Typographic Style - Additional utilities */
-@layer utilities {
-  /* Grid system for mathematical precision */
-  .grid-swiss {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 2rem;
-  }
-
-  /* Asymmetric layout helpers */
-  .col-span-golden {
-    grid-column: span 8;
-  }
-
-  .col-span-golden-complement {
-    grid-column: span 4;
-  }
-
-  /* Fine black divider lines */
-  .divider-swiss {
-    border-top: 1px solid oklch(0% 0 0);
-  }
-
-  /* Red square accent */
-  .accent-square {
-    position: relative;
-  }
-
-  .accent-square::before {
-    content: '';
-    position: absolute;
-    width: 1rem;
-    height: 1rem;
-    background: oklch(55% 0.22 25);
-    left: -1.5rem;
-    top: 0.25rem;
-  }
-}
-
-/* Typography - Clean sans-serif hierarchy */
-h1, h2, h3, h4, h5, h6 {
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-h1 {
-  font-size: 3rem;
-  margin-bottom: 2rem;
-}
-
-h2 {
-  font-size: 2rem;
-  margin-bottom: 1.5rem;
-}
-
-h3 {
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
-}
-
-/* Generous negative space */
-section {
-  padding: 4rem 0;
 }

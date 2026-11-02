@@ -121,13 +121,11 @@ describe("Workflow Integration Tests", () => {
       shipmentType: "import",
     });
 
-    expect(checklist).toBeDefined();
-    expect(Array.isArray(checklist)).toBe(true);
-    expect(checklist.length).toBeGreaterThan(0);
-    
-    const firstItem = checklist[0];
-    expect(firstItem).toHaveProperty("item");
-    expect(firstItem).toHaveProperty("required");
+    expect(checklist.items.length).toBeGreaterThan(0);
+    const firstItem = checklist.items[0];
+    expect(firstItem).toHaveProperty("task");
+    expect(firstItem).toHaveProperty("priority");
     expect(firstItem).toHaveProperty("category");
+    expect(firstItem.origin).toBe("rules");
   }, 60000);
 });

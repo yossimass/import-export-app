@@ -1,4 +1,3 @@
-import Navigation from "@/components/Navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,12 +60,11 @@ export default function Utilities() {
   };
 
   return (
-    <div className="min-h-screen">
-      <Navigation />
-      <div className="container py-12">
+    <div className="">
+      <div className="">
         <div className="mb-8">
-          <div className="w-2 h-12 bg-primary mb-4"></div>
-          <h1 className="text-4xl font-bold mb-2">Trade Utilities</h1>
+          
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-1">Trade Utilities</h1>
           <p className="text-muted-foreground">
             Currency converter and shipping cost estimator
           </p>

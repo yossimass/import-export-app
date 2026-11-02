@@ -8,6 +8,7 @@
 
 import type { TradeAgreement } from "../shared/tradeAgreements";
 import { linesByPrefix } from "./htsIndex";
+import type { AdditionalDuty, TariffResult } from "../shared/tradeTypes";
 
 const USITC_SEARCH = "https://hts.usitc.gov/reststop/search";
 const FETCH_TIMEOUT_MS = 6000;
@@ -184,7 +185,7 @@ export type TariffInput = {
 };
 
 /** US import duty calculation from official HTS rates. Returns null if the code isn't found. */
-export async function calculateUsTariff(input: TariffInput) {
+export async function calculateUsTariff(input: TariffInput): Promise<TariffResult | null> {
   const line = await lookupHts(input.htsCode);
   if (!line) return null;
 
@@ -222,6 +223,9 @@ export async function calculateUsTariff(input: TariffInput) {
   }
 
   const additionalDuties = input.value * ((input.additionalDutyRate ?? 0) / 100);
+  const additionalDutyLines: AdditionalDuty[] = input.additionalDutyRate
+    ? [{ name: "Additional duty (entered)", ratePercent: input.additionalDutyRate, amount: round2(additionalDuties), basis: "Entered by you", source: "user" }]
+    : [];
   if (origin === "CHN" && !input.additionalDutyRate) {
     notes.push("Goods of Chinese origin may be subject to Section 301 and other additional duties — enter them as an additional duty %.");
   }
@@ -256,6 +260,8 @@ export async function calculateUsTariff(input: TariffInput) {
     explanation,
     alternatives: [] as Array<{ scenario: string; impact: string }>,
     effectiveDate: new Date().toISOString(),
+    additionalDutyLines,
+    source: "official",
   };
 }
 

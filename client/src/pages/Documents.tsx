@@ -1,11 +1,10 @@
-import Navigation from "@/components/Navigation";
 import WorkflowStepper from "@/components/WorkflowStepper";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 
 const WORKFLOW_STEPS = [
-  { id: 1, label: "HTS Code", path: "/hts-search" },
-  { id: 2, label: "Tariff Calc", path: "/tariff-calculator" },
+  { id: 1, label: "Classify", path: "/hts-search" },
+  { id: 2, label: "Duties", path: "/tariff-calculator" },
   { id: 3, label: "Documents", path: "/documents" },
   { id: 4, label: "Compliance", path: "/checklists" },
 ];
@@ -102,13 +101,12 @@ export default function Documents() {
   ];
 
   return (
-    <div className="min-h-screen">
-      <Navigation />
+    <div className="">
       <WorkflowStepper currentStep={3} steps={WORKFLOW_STEPS} />
-      <div className="container py-12">
+      <div className="">
         <div className="mb-8">
-          <div className="w-2 h-12 bg-primary mb-4"></div>
-          <h1 className="text-4xl font-bold mb-2">Trade Documents</h1>
+          
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight mb-1">Trade Documents</h1>
           <p className="text-muted-foreground">
             Secure cloud storage for all your trade documentation
           </p>

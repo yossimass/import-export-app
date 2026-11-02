@@ -6,6 +6,8 @@
  */
 import { COUNTRIES } from "../shared/countries";
 import { getAgreementById, getApplicableAgreements } from "../shared/tradeAgreements";
+import type { ChecklistItem, OriginGuidance, ParsedPO, Regulation } from "../shared/tradeTypes";
+export type { ChecklistItem, ParsedPO, Regulation };
 
 // ============================================================================
 // COUNTRIES
@@ -53,18 +55,6 @@ const inChapters = (ch: number, ...ranges: Array<number | [number, number]>) =>
 // ============================================================================
 // REGULATIONS
 // ============================================================================
-
-export type Regulation = {
-  title: string;
-  category: "import" | "export" | "licensing" | "restriction";
-  description: string;
-  authority: string;
-  riskLevel: "low" | "medium" | "high" | "critical";
-  requirements: string[];
-  documentation: string[];
-  source: string;
-  penalties?: string;
-};
 
 const COUNTRY_REGULATIONS: Record<string, Regulation[]> = {
   USA: [
@@ -642,7 +632,7 @@ export function regulationsFor(countryInput: string, regulationType: string, hts
   const country = resolveCountry(countryInput);
   const base = COUNTRY_REGULATIONS[country]
     ?? (EU_MEMBERS.has(country) ? COUNTRY_REGULATIONS.EU : GENERIC_REGULATIONS);
-  const all = [...base, ...productRegulations(country, htsCode)];
+  const all = [...base, ...productRegulations(country, htsCode)].map(r => ({ ...r, origin: "rules" as const }));
   if (regulationType === "all") return all;
   const wanted = regulationType === "restrictions" ? "restriction" : regulationType;
   return all.filter(r => r.category === wanted);
@@ -651,17 +641,6 @@ export function regulationsFor(countryInput: string, regulationType: string, hts
 // ============================================================================
 // CHECKLIST
 // ============================================================================
-
-export type ChecklistItem = {
-  task: string;
-  description: string;
-  priority: "required" | "optional" | "conditional";
-  category: "documentation" | "compliance" | "inspection" | "payment";
-  authority?: string;
-  riskLevel: "low" | "medium" | "high" | "critical";
-  deadline: string;
-  completed: boolean;
-};
 
 export function checklistFor(input: {
   shipmentType: "import" | "export";
@@ -672,7 +651,7 @@ export function checklistFor(input: {
   const origin = resolveCountry(input.originCountry);
   const dest = resolveCountry(input.destinationCountry);
   const items: ChecklistItem[] = [];
-  const add = (item: Omit<ChecklistItem, "completed">) => items.push({ ...item, completed: false });
+  const add = (item: Omit<ChecklistItem, "completed">) => items.push({ ...item, completed: false, origin: "rules" });
 
   add({ task: "Confirm HS/HTS classification", description: `Verify the ${input.htsCode ? `code ${input.htsCode}` : "tariff code"} against the destination tariff; it drives duty rates, permits and admissibility.`, priority: "required", category: "compliance", riskLevel: "high", deadline: "Before quoting / ordering" });
   add({ task: "Screen all parties", description: "Check buyer, seller, consignee and freight parties against sanctions and denied-party lists (e.g. OFAC SDN, BIS Entity List, EU/UN lists).", priority: "required", category: "compliance", riskLevel: "critical", deadline: "Before accepting the order" });
@@ -742,7 +721,7 @@ export function originGuidance(input: {
   destinationCountry?: string;
   goodsDescription?: string;
   htsCode?: string;
-}) {
+}): OriginGuidance {
   const agreement = getAgreementById(input.tradeAgreement);
   const criteria = agreement?.originCriteria ?? [];
   const ch = chapterOf(input.htsCode);
@@ -797,33 +776,6 @@ export function originGuidance(input: {
 // ============================================================================
 // PURCHASE ORDER PARSING
 // ============================================================================
-
-export type ParsedPO = {
-  poNumber?: string;
-  poDate?: string;
-  buyerName?: string;
-  buyerAddress?: string;
-  sellerName?: string;
-  sellerAddress?: string;
-  shipToName?: string;
-  shipToAddress?: string;
-  incoterms?: string;
-  currency?: string;
-  paymentTerms?: string;
-  deliveryDate?: string;
-  totalValue?: string;
-  notes?: string;
-  lineItems: Array<{
-    lineNumber?: number;
-    description: string;
-    quantity?: string;
-    unit?: string;
-    unitPrice?: string;
-    totalPrice?: string;
-    htsCode?: string;
-    countryOfOrigin?: string;
-  }>;
-};
 
 const INCOTERMS = /\b(EXW|FCA|FAS|FOB|CFR|CIF|CPT|CIP|DAP|DPU|DDP)\b/;
 const CURRENCY_CODES = /\b(USD|EUR|GBP|CNY|RMB|JPY|CAD|MXN|INR|KRW|AUD|CHF|HKD|SGD|TWD|VND|BRL)\b/;
@@ -881,7 +833,9 @@ function parseItemLine(line: string, lineNumber: number): ParsedPO["lineItems"][
   const amounts = Array.from(line.matchAll(MONEY)).map(m => m[0]);
   if (amounts.length < 2) return null;
   const hts = line.match(HTS_IN_TEXT)?.[1];
-  const qtyMatch = line.match(/\b(\d[\d,]*(?:\.\d+)?)\s*(pcs|pc|units?|ea|each|sets?|pairs?|prs|dozen|doz|kg|kgs|lbs?|m|meters?|cartons?|ctns?|boxes)\b/i);
+  const qtyMatch = line.match(/\b(\d[\d,]*(?:\.\d+)?)\s*(pcs|pc|units?|ea|each|sets?|pairs?|prs|dozen|doz|kg|kgs|lbs?|m|meters?|cartons?|ctns?|boxes)\b/i)
+    // "10,000 plush bears @ 2.10": a large leading number is a quantity, not a line number
+    ?? line.match(/^\s*(\d{1,3}(?:,\d{3})+|\d{3,})()\s+(?=[A-Za-z])/);
   const total = amounts[amounts.length - 1];
   const unitPrice = amounts[amounts.length - 2];
   const origin = line.match(/\b(?:origin|coo|made in)\s*[:\-]?\s*([A-Za-z]{2,}(?: [A-Za-z]+)?)/i)?.[1];
@@ -893,14 +847,19 @@ function parseItemLine(line: string, lineNumber: number): ParsedPO["lineItems"][
     .replace(/\b(?:origin|coo|made in)\s*[:\-]?\s*[A-Za-z]{2,}(?: [A-Za-z]+)?/i, "");
   for (const a of [total, unitPrice]) description = description.replace(a, "");
   if (qtyMatch) description = description.replace(qtyMatch[0], "");
-  description = description.replace(/\s{2,}/g, " ").replace(/[\s|,;-]+$/, "").trim();
+  description = description
+    .replace(CURRENCY_CODES, "")
+    .replace(/[@=]/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/[\s|,;-]+$/, "")
+    .trim();
   if (!description || /^(sub)?total|^tax|^shipping|^freight/i.test(description)) return null;
 
   return {
     lineNumber,
     description,
     quantity: qtyMatch?.[1].replace(/,/g, ""),
-    unit: qtyMatch?.[2],
+    unit: qtyMatch?.[2] || undefined,
     unitPrice: cleanMoney(unitPrice),
     totalPrice: cleanMoney(total),
     htsCode: hts,
@@ -946,7 +905,10 @@ export function parsePurchaseOrder(text: string, isCsv = false): ParsedPO {
 
   const lines = text.split(/\r?\n/).map(l => l.replace(/\s+/g, " ").trim()).filter(Boolean);
 
-  const poNumber = text.match(/(?:P\.?\s?O\.?|Purchase\s+Order)\s*(?:No\.?|Number|Num|#)?\s*[:#]?\s*([A-Z0-9][A-Z0-9\-/]{2,})/i)?.[1];
+  // A PO number must contain a digit ("PURCHASE ORDER\nOrder ref..." is not one)
+  const poNumber = Array.from(text.matchAll(/(?:P\.?\s?O\.?|Purchase\s+Order|Order)[ \t]*(?:No\.?|Number|Num|Ref\.?|#)?[ \t]*[:#]?[ \t]*([A-Z0-9][A-Z0-9\-/]{2,})/gi))
+    .map(m => m[1])
+    .find(v => /\d/.test(v));
   const poDate = toIsoDate(labelled(lines, /\b(?:PO\s+|Order\s+|Issue\s+)?Date\b(?!\s*(?:of\s+)?(?:delivery|ship))/i)?.split(/\s{2,}| (?=[A-Z][a-z]+:)/)[0]);
   const deliveryDate = toIsoDate(labelled(lines, /\b(?:Delivery|Ship(?:ment)?|Required|Due)\s+Date\b/i));
   const incoterms = text.match(INCOTERMS)?.[1];
