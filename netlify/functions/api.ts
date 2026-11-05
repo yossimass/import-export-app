@@ -16,6 +16,8 @@ export default async (req: Request): Promise<Response> => {
     headers[key] = value;
   });
   headers["x-forwarded-proto"] ??= url.protocol.replace(":", "");
+  // Needed to build absolute URLs (e.g. the Google sign-in callback)
+  headers["host"] ??= url.host;
 
   const multiValueQueryStringParameters: Record<string, string[]> = {};
   url.searchParams.forEach((value, key) => {

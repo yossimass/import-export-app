@@ -1,8 +1,8 @@
 import { trpc } from "@/lib/trpc";
 import { useMemo } from "react";
 
-// Alpha: no login. The server assigns each browser an anonymous workspace,
-// so "authenticated" just means the workspace user has loaded.
+// Every browser gets an anonymous workspace from the server; signing in with
+// Google (when the site has it configured) attaches that workspace to the account.
 export function useAuth() {
   const meQuery = trpc.auth.me.useQuery(undefined, {
     retry: false,
@@ -14,10 +14,17 @@ export function useAuth() {
     loading: meQuery.isLoading,
     error: meQuery.error ?? null,
     isAuthenticated: Boolean(meQuery.data),
+    isSignedIn: meQuery.data?.loginMethod === "google",
   }), [meQuery.data, meQuery.error, meQuery.isLoading]);
 
   return {
     ...state,
     refresh: () => meQuery.refetch(),
+    signInUrl: (returnTo = window.location.pathname + window.location.search) =>
+      `/api/auth/google?returnTo=${encodeURIComponent(returnTo)}`,
+    logout: async () => {
+      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+      window.location.href = "/";
+    },
   };
 }

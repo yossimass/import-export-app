@@ -1,6 +1,7 @@
 import express from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerFileRoutes } from "./files";
+import { registerGoogleAuthRoutes } from "./googleAuth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 
@@ -24,6 +25,8 @@ export function createApp() {
   app.use(express.json({ limit: "6mb" }));
   app.use(express.urlencoded({ limit: "6mb", extended: true }));
 
+  // Optional Google sign-in under /api/auth/*
+  registerGoogleAuthRoutes(app);
   // Authenticated file downloads under /api/files/*
   registerFileRoutes(app);
   // tRPC API

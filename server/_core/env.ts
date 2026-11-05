@@ -4,6 +4,13 @@ export const ENV = {
   databaseUrl: process.env.DATABASE_URL ?? process.env.NETLIFY_DB_URL ?? process.env.NETLIFY_DATABASE_URL ?? "",
   // Workspace granted the admin role: "anon_" + the itcp_workspace cookie value
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
+  // Optional Google sign-in. Without these, everyone uses anonymous workspaces.
+  googleClientId: process.env.GOOGLE_CLIENT_ID ?? "",
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+  // Signs the session cookie; falls back to a key derived from the Google secret
+  sessionSecret: process.env.SESSION_SECRET ?? "",
+  // Google account email granted the admin role
+  ownerEmail: (process.env.OWNER_EMAIL ?? "").toLowerCase(),
   isProduction: process.env.NODE_ENV === "production",
   // Optional server-side AI (any OpenAI-compatible API). Without LLM_API_KEY the
   // app runs on official data and rules only; testers can still use local Ollama.
