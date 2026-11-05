@@ -11,6 +11,7 @@ import type { HtsResult, TariffResult } from "../shared/tradeTypes";
 import { storageDelete, storagePut, storageRead } from "./storage";
 import * as trade from "./tradeData";
 import type { User } from "../drizzle/schema";
+import { googleConfigured } from "./_core/googleAuth";
 
 function requireUser(user: User | null): User {
   if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Workspace unavailable" });
@@ -49,6 +50,7 @@ export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
+    providers: publicProcedure.query(() => ({ google: googleConfigured() })),
   }),
 
   // ============================================================================
