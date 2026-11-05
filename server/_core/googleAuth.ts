@@ -17,7 +17,7 @@ const TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const googleConfigured = () => Boolean(ENV.googleClientId && ENV.googleClientSecret);
 
 function callbackUrl(req: Request): string {
-  return `${req.protocol}://${req.get("host")}/api/auth/google/callback`;
+  return `${req.protocol}://${req.get("host")}/api/auth/callback`;
 }
 
 /** Only same-site paths, so the sign-in flow can't be used as an open redirect. */
@@ -105,7 +105,8 @@ export function registerGoogleAuthRoutes(app: Express) {
     res.redirect(`${AUTH_URL}?${params}`);
   });
 
-  app.get("/api/auth/google/callback", async (req: Request, res: Response) => {
+  // /api/auth/callback is the registered redirect URI; the longer path is kept as an alias
+  app.get(["/api/auth/callback", "/api/auth/google/callback"], async (req: Request, res: Response) => {
     const stored = req.headers.cookie ? parseCookieHeader(req.headers.cookie)[STATE_COOKIE] : undefined;
     res.clearCookie(STATE_COOKIE, { ...cookieOptions(req, 0), maxAge: undefined });
     const [state, encodedReturn] = stored?.split(".") ?? [];
